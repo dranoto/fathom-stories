@@ -75,6 +75,9 @@ body {
   color: var(--warn);
   animation: pulse 1.5s ease-in-out infinite;
 }
+.countdown-chip.error .chip-time {
+  color: var(--error);
+}
 .countdown-chip.running .chip-time {
   color: var(--info);
 }

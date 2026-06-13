@@ -113,7 +113,7 @@ async function bootstrap() {
   loadTheme();
   setupThemeButton();
   setupReader();
-  startCountdowns({
+  await startCountdowns({
     onRefreshComplete: afterTimerFiredRefresh,
     onRegroupComplete: afterTimerFiredRegroup,
   });

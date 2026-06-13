@@ -1,17 +1,18 @@
 // frontend/js/countdowns.js
 import { runFetch, runRegroup } from "./apiService.js";
 
-const REFRESH_MS = 60 * 60 * 1000;
-const REGROUP_MS = 60 * 60 * 1000;
-const REGROUP_OFFSET_MS = 30 * 60 * 1000;
+const POLL_MS = 60_000;
 
-let refreshDeadline = Date.now() + REFRESH_MS;
-let regroupDeadline = Date.now() + REGROUP_OFFSET_MS;
+let refreshDeadline = null;
+let regroupDeadline = null;
 let running = { refresh: false, regroup: false };
 let timerHandle = null;
+let pollHandle = null;
 let onCompleteCallbacks = { refresh: [], regroup: [] };
+let lastFetchError = null;
 
 function formatMs(ms) {
+  if (ms === null || ms === undefined || isNaN(ms)) return "--:--";
   if (ms < 0) ms = 0;
   const total = Math.floor(ms / 1000);
   const h = Math.floor(total / 3600);
@@ -23,8 +24,8 @@ function formatMs(ms) {
 
 function tick() {
   const now = Date.now();
-  const refreshMs = refreshDeadline - now;
-  const regroupMs = regroupDeadline - now;
+  const refreshMs = refreshDeadline !== null ? refreshDeadline - now : null;
+  const regroupMs = regroupDeadline !== null ? regroupDeadline - now : null;
 
   const refreshEl = document.getElementById("chip-refresh-time");
   const regroupEl = document.getElementById("chip-regroup-time");
@@ -35,15 +36,37 @@ function tick() {
   if (regroupEl) regroupEl.textContent = running.regroup ? "running…" : formatMs(regroupMs);
   if (refreshChip) {
     refreshChip.classList.toggle("running", running.refresh);
-    refreshChip.classList.toggle("due", !running.refresh && refreshMs < 60_000 && refreshMs >= 0);
+    refreshChip.classList.toggle("due", !running.refresh && refreshMs !== null && refreshMs < 60_000 && refreshMs >= 0);
+    refreshChip.classList.toggle("error", !!lastFetchError);
   }
   if (regroupChip) {
     regroupChip.classList.toggle("running", running.regroup);
-    regroupChip.classList.toggle("due", !running.regroup && regroupMs < 60_000 && regroupMs >= 0);
+    regroupChip.classList.toggle("due", !running.regroup && regroupMs !== null && regroupMs < 60_000 && regroupMs >= 0);
   }
 }
 
-async function fireRefresh(triggeredManually) {
+async function loadDeadlinesFromServer() {
+  try {
+    const res = await fetch("/api/grouping/schedule");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data && data.jobs) {
+      if (data.jobs.rss_fetch) {
+        refreshDeadline = new Date(data.jobs.rss_fetch).getTime();
+      }
+      if (data.jobs.regroup_uncategorized) {
+        regroupDeadline = new Date(data.jobs.regroup_uncategorized).getTime();
+      }
+      lastFetchError = null;
+    }
+  } catch (e) {
+    console.warn("countdowns: failed to fetch server schedule", e);
+    lastFetchError = e.message;
+  }
+  tick();
+}
+
+async function fireRefresh() {
   if (running.refresh) return;
   running.refresh = true;
   tick();
@@ -54,12 +77,11 @@ async function fireRefresh(triggeredManually) {
     console.warn("scheduled refresh failed:", e);
   } finally {
     running.refresh = false;
-    refreshDeadline = Date.now() + REFRESH_MS;
-    tick();
+    await loadDeadlinesFromServer();
   }
 }
 
-async function fireRegroup(triggeredManually) {
+async function fireRegroup() {
   if (running.regroup) return;
   running.regroup = true;
   tick();
@@ -70,46 +92,42 @@ async function fireRegroup(triggeredManually) {
     console.warn("scheduled regroup failed:", e);
   } finally {
     running.regroup = false;
-    regroupDeadline = Date.now() + REGROUP_MS;
-    tick();
+    await loadDeadlinesFromServer();
   }
 }
 
-function checkDeadlines() {
+async function checkDeadlines() {
   const now = Date.now();
-  if (!running.refresh && now >= refreshDeadline) fireRefresh(false);
-  if (!running.regroup && now >= regroupDeadline) fireRegroup(false);
+  if (refreshDeadline !== null && !running.refresh && now >= refreshDeadline) {
+    fireRefresh();
+  }
+  if (regroupDeadline !== null && !running.regroup && now >= regroupDeadline) {
+    fireRegroup();
+  }
 }
 
-export function startCountdowns({ onRefreshComplete, onRegroupComplete } = {}) {
+export async function startCountdowns({ onRefreshComplete, onRegroupComplete } = {}) {
   if (onRefreshComplete) onCompleteCallbacks.refresh.push(onRefreshComplete);
   if (onRegroupComplete) onCompleteCallbacks.regroup.push(onRegroupComplete);
 
   if (timerHandle) return;
+  await loadDeadlinesFromServer();
   tick();
   timerHandle = setInterval(() => {
     tick();
     checkDeadlines();
   }, 1000);
 
+  pollHandle = setInterval(loadDeadlinesFromServer, POLL_MS);
+
   const refreshChip = document.getElementById("chip-refresh");
   const regroupChip = document.getElementById("chip-regroup");
   if (refreshChip) {
     refreshChip.style.cursor = "pointer";
-    refreshChip.addEventListener("click", () => fireRefresh(true));
+    refreshChip.addEventListener("click", () => fireRefresh());
   }
   if (regroupChip) {
     regroupChip.style.cursor = "pointer";
-    regroupChip.addEventListener("click", () => fireRegroup(true));
+    regroupChip.addEventListener("click", () => fireRegroup());
   }
-}
-
-export function resetRefreshTimer() {
-  refreshDeadline = Date.now() + REFRESH_MS;
-  tick();
-}
-
-export function resetRegroupTimer() {
-  regroupDeadline = Date.now() + REGROUP_MS;
-  tick();
 }

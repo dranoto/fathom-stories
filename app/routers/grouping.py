@@ -1,5 +1,6 @@
 # app/routers/grouping.py
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session as SQLAlchemySession
 
@@ -12,6 +13,25 @@ from ..grouping import lifecycle as lifecycle_module
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/grouping", tags=["grouping"])
+
+
+@router.get("/schedule")
+async def get_schedule(
+    request: Request,
+):
+    scheduler = getattr(request.app.state, "scheduler", None)
+    jobs = {}
+    if scheduler is not None:
+        try:
+            for job in scheduler.get_jobs():
+                nrt = job.next_run_time
+                jobs[job.id] = nrt.isoformat() if nrt else None
+        except Exception as e:
+            logger.warning(f"Failed to enumerate scheduler jobs: {e}")
+    return {
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "jobs": jobs,
+    }
 
 
 @router.post("/fetch")
