@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session as SQLAlchemySession
 
 from .. import database
-from ..dependencies import get_llm_grouping, get_llm_summary
+from ..dependencies import get_llm_grouping
 from ..grouping import engine as grouping_engine
 from ..grouping import recluster as recluster_module
 from ..grouping import lifecycle as lifecycle_module
@@ -24,6 +24,19 @@ async def run_grouping(
     except HTTPException:
         raise
     result = await grouping_engine.assign_new_articles(llm)
+    return {"status": "ok", **result}
+
+
+@router.post("/regroup")
+async def run_regroup(
+    request: Request,
+    db: SQLAlchemySession = Depends(database.get_db),
+):
+    try:
+        llm = get_llm_grouping(request)
+    except HTTPException:
+        raise
+    result = await grouping_engine.regroup_uncategorized(llm)
     return {"status": "ok", **result}
 
 

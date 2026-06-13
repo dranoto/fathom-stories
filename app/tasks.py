@@ -83,6 +83,23 @@ async def scheduled_daily_recluster() -> None:
         logger.error(f"TASKS: scheduled_daily_recluster failed: {e}", exc_info=True)
 
 
+async def scheduled_regroup_uncategorized() -> None:
+    if not app_config.OPENAI_API_KEY:
+        return
+    if rss_update_lock.locked():
+        logger.info("TASKS: rss_fetch in progress; deferring regroup")
+        return
+    logger.info("TASKS: scheduled_regroup_uncategorized starting")
+    try:
+        llm = _get_grouping_llm()
+        if not llm:
+            return
+        result = await grouping_engine.regroup_uncategorized(llm)
+        logger.info(f"TASKS: regroup_uncategorized result: {result}")
+    except Exception as e:
+        logger.error(f"TASKS: scheduled_regroup_uncategorized failed: {e}", exc_info=True)
+
+
 async def scheduled_lifecycle() -> None:
     logger.info("TASKS: scheduled_lifecycle starting")
     try:

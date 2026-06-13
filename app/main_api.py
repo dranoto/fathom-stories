@@ -77,6 +77,13 @@ async def lifespan(app: FastAPI):
             max_instances=1, coalesce=True,
         )
         scheduler.add_job(
+            tasks.scheduled_regroup_uncategorized,
+            IntervalTrigger(hours=1),
+            id="regroup_uncategorized",
+            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=5),
+            max_instances=1, coalesce=True,
+        )
+        scheduler.add_job(
             tasks.scheduled_daily_recluster,
             CronTrigger(hour=app_config.RECLUSTER_HOUR_UTC, minute=10),
             id="daily_recluster",

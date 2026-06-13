@@ -30,6 +30,7 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 @router.get("", response_model=List[EventResponse])
 async def list_events(
     status: Optional[str] = Query(None, description="Filter by status: active|cooling|archived"),
+    min_articles: int = Query(1, ge=1, description="Only include events with at least this many articles"),
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     q = db.query(Event)
@@ -46,6 +47,11 @@ async def list_events(
         .group_by(Article.event_id)
         .all()
     )
+
+    if min_articles > 1:
+        events = [e for e in events if article_counts.get(e.id, 0) >= min_articles]
+        if not events:
+            return []
     feed_counts = dict(
         db.query(Article.event_id, func.count(func.distinct(Article.feed_source_id)))
         .filter(Article.event_id.in_(event_ids), Article.feed_source_id.isnot(None))
@@ -59,7 +65,7 @@ async def list_events(
         .all()
     )
 
-    return [
+    result = [
         EventResponse(
             id=ev.id,
             name=ev.name,
@@ -75,6 +81,13 @@ async def list_events(
         )
         for ev in events
     ]
+    result.sort(
+        key=lambda r: (
+            -(r.article_count or 0),
+            -(r.last_article_at.timestamp() if r.last_article_at else 0),
+        )
+    )
+    return result
 
 
 @router.post("", response_model=EventResponse)

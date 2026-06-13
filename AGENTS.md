@@ -41,7 +41,8 @@ python -m app.cli admin
 | `python -m app.cli init-db` | Create tables |
 | `python -m app.cli seed-feeds` | Add feeds from `RSS_FEED_URLS` |
 | `python -m app.cli fetch` | One-shot RSS fetch + scrape |
-| `python -m app.cli group` | One-shot live grouping of unassigned articles |
+| `python -m app.cli group` | One-shot live grouping (existing events only, no new events) |
+| `python -m app.cli regroup` | One-shot forced regroup (creates new events when 2+ ungrouped match) |
 | `python -m app.cli recluster [--apply]` | One-shot daily recluster; `--apply` auto-applies cool/revive |
 | `python -m app.cli lifecycle` | One-shot archive/cool tick |
 | `python -m app.cli summarize <event_id>` | Generate/regenerate event summary |

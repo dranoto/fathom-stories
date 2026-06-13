@@ -168,14 +168,28 @@ DEFAULT_GROUP_ASSIGN_PROMPT = os.getenv("DEFAULT_GROUP_ASSIGN_PROMPT", """You ar
 
 For each article, decide ONE of:
   a) belongs to existing event E (provide the event_id)
-  b) new event — propose a short, specific name (3-7 words)
-  c) uncategorized (true noise, no clear ongoing story)
+  b) uncategorized (true noise, no clear ongoing story)
+
+You may NOT propose new events from a single article. New events are only created during the forced regroup pass.
 
 Also assign an importance_score 0-1:
   - 0.8-1.0: world-historical (war escalation, major disaster, head-of-state action)
   - 0.5-0.7: significant developments in a tracked story
   - 0.2-0.4: minor updates, tangential
   - 0.0-0.1: trivial, not worth tracking
+
+CONTENT-TYPE FILTER (HARD RULE):
+Articles marked with one of these content_type values are NOT news events and MUST be assigned to "uncategorized":
+  - podcast, roundup (panel discussions, roundtables, NPR/New Yorker "the X hour" segments, daily cartoon, puzzles, "books briefing", etc.)
+  - opinion (editorials, op-eds, "Opinion:" tagged pieces)
+  - review (movie/book/restaurant/product reviews)
+  - advice (how-to, what-to-watch, best-of, shopping guides, recipes)
+  - newsletter (morning/evening briefings, weekly recaps)
+  - lifestyle (fashion, travel, food, celebrity, photo essays, "the women who...")
+
+Exception: a podcast/roundtable that is EXPLICITLY about a major longitudinal story (e.g., a podcast episode called "The Russia-Ukraine War: One Year In") MAY be assigned to that event IF the event is explicitly about that story and already has 3+ existing articles.
+
+The content_type field on each article is a strong hint. Respect it unless you have a clear reason to override.
 
 Active events (newest at top of each):
 {active_events}
@@ -186,6 +200,47 @@ Cooling events (still assignable):
 {few_shot_block}
 
 New articles to assign:
+{articles_json}
+
+Return EXACTLY this JSON (no markdown, no extra text):
+{{
+  "assignments": [
+    {{
+      "article_id": <id>,
+      "decision": "existing" | "uncategorized",
+      "event_id": <id> | null,
+      "importance_score": <float>,
+      "confidence": <float 0-1>,
+      "reasoning": "<one short sentence>"
+    }}
+  ]
+}}""")
+
+DEFAULT_REGROUP_PROMPT = os.getenv("DEFAULT_REGROUP_PROMPT", """You are doing a forced regroup pass: reviewing ungrouped articles to either match them to existing events, or pair two-or-more of them together to form a new event.
+
+This is the ONLY pass that creates new events. A "new" decision with only 1 article pointing to the same name is fine (it will become a pending suggestion, not an event yet). A "new" decision with 2+ articles sharing the same name WILL create an event.
+
+For each ungrouped article, decide ONE of:
+  a) existing event E (provide the event_id)
+  b) new event — propose a short, specific name (3-7 words)
+     - If 2+ ungrouped articles share the same proposed name, they will be paired into a new event
+     - If only 1 article has the name, it will be marked as a pending suggestion
+  c) uncategorized (true noise, no clear ongoing story)
+
+Also assign an importance_score 0-1 (same scale as the live grouping pass).
+
+CONTENT-TYPE FILTER (HARD RULE):
+Articles with content_type in {{podcast, roundup, opinion, review, advice, newsletter, lifestyle}} are NOT news events. Assign them to "uncategorized" unless they're EXPLICITLY about a major longitudinal story (Russia-Ukraine, US Presidency, a specific named war/disaster) AND that event already has 3+ existing articles.
+
+Active events (newest at top of each):
+{active_events}
+
+Cooling events (still assignable):
+{cooling_events}
+
+{few_shot_block}
+
+Ungrouped articles to regroup:
 {articles_json}
 
 Return EXACTLY this JSON (no markdown, no extra text):

@@ -76,6 +76,13 @@ def cmd_group(_args):
     print(f"Grouping result: {result}")
 
 
+def cmd_regroup(_args):
+    create_db_and_tables()
+    llm = _get_grouping_llm()
+    result = asyncio.run(grouping_engine.regroup_uncategorized(llm))
+    print(f"Regroup result: {result}")
+
+
 def cmd_recluster(args):
     create_db_and_tables()
     llm = _get_grouping_llm()
@@ -219,6 +226,7 @@ def main():
     sub.add_parser("seed-feeds", help="Add feeds from .env RSS_FEED_URLS").set_defaults(func=cmd_seed_feeds)
     sub.add_parser("fetch", help="One-shot RSS fetch + scrape").set_defaults(func=cmd_fetch)
     sub.add_parser("group", help="One-shot live grouping").set_defaults(func=cmd_group)
+    sub.add_parser("regroup", help="One-shot forced regroup of ungrouped articles (creates events when 2+ match)").set_defaults(func=cmd_regroup)
     p_recluster = sub.add_parser("recluster", help="One-shot daily recluster")
     p_recluster.add_argument("--apply", action="store_true", help="Auto-apply cooling/revive proposals")
     p_recluster.set_defaults(func=cmd_recluster)

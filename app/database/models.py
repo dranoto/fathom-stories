@@ -49,6 +49,7 @@ class Article(Base):
     importance_score = Column(Float, nullable=True, default=0.5)
     grouping_confidence = Column(Float, nullable=True, default=0.0)
     grouped_at = Column(DateTime(timezone=True), nullable=True)
+    proposed_event_name = Column(String, nullable=True, index=True)
 
     feed_source = relationship("FeedSource", back_populates="articles")
     event = relationship("Event", back_populates="articles")

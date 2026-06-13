@@ -25,6 +25,15 @@ def create_db_and_tables() -> None:
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "articles" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("articles")}
+        if "proposed_event_name" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE articles ADD COLUMN proposed_event_name VARCHAR"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_articles_proposed_event_name ON articles (proposed_event_name)"))
+            logger.info("Migrated: added articles.proposed_event_name")
     logger.info("Database tables created/verified.")
 
 

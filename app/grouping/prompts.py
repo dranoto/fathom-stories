@@ -1,5 +1,6 @@
 # app/grouping/prompts.py
 import logging
+import json
 from typing import List, Dict, Any, Optional
 
 from .. import config as app_config
@@ -32,7 +33,22 @@ def build_group_assign_prompt(
     prompt_template: Optional[str] = None,
 ) -> str:
     template = prompt_template or app_config.DEFAULT_GROUP_ASSIGN_PROMPT
-    import json
+    return template.format(
+        active_events=json.dumps(active_events, indent=2, default=str),
+        cooling_events=json.dumps(cooling_events, indent=2, default=str),
+        few_shot_block=few_shot_block,
+        articles_json=json.dumps(articles, indent=2, default=str),
+    )
+
+
+def build_regroup_prompt(
+    active_events: List[Dict[str, Any]],
+    cooling_events: List[Dict[str, Any]],
+    articles: List[Dict[str, Any]],
+    few_shot_block: str,
+    prompt_template: Optional[str] = None,
+) -> str:
+    template = prompt_template or app_config.DEFAULT_REGROUP_PROMPT
     return template.format(
         active_events=json.dumps(active_events, indent=2, default=str),
         cooling_events=json.dumps(cooling_events, indent=2, default=str),
@@ -50,7 +66,6 @@ def build_recluster_prompt(
     prompt_template: Optional[str] = None,
 ) -> str:
     template = prompt_template or app_config.DEFAULT_RECLUSTER_PROMPT
-    import json
     return template.format(
         active_events=json.dumps(active_events, indent=2, default=str),
         cooling_events=json.dumps(cooling_events, indent=2, default=str),
