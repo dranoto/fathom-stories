@@ -43,6 +43,11 @@ function tick() {
     regroupChip.classList.toggle("running", running.regroup);
     regroupChip.classList.toggle("due", !running.regroup && regroupMs !== null && regroupMs < 60_000 && regroupMs >= 0);
   }
+
+  const menuRefreshEl = document.getElementById("menu-chip-refresh");
+  const menuRegroupEl = document.getElementById("menu-chip-regroup");
+  if (menuRefreshEl) menuRefreshEl.textContent = running.refresh ? "running…" : formatMs(refreshMs);
+  if (menuRegroupEl) menuRegroupEl.textContent = running.regroup ? "running…" : formatMs(regroupMs);
 }
 
 async function loadDeadlinesFromServer() {

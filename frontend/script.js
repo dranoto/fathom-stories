@@ -11,6 +11,8 @@ import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
 import { loadTheme, setupThemeButton } from "./js/theme.js";
 import { startCountdowns } from "./js/countdowns.js";
+import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
+import { registerServiceWorker } from "./js/pwa.js";
 
 async function refreshEvents() {
   let all = [];
@@ -113,6 +115,8 @@ async function bootstrap() {
   loadTheme();
   setupThemeButton();
   setupReader();
+  setupMobileMenu(() => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
+  registerServiceWorker();
   await startCountdowns({
     onRefreshComplete: afterTimerFiredRefresh,
     onRegroupComplete: afterTimerFiredRegroup,

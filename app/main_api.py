@@ -135,6 +135,17 @@ frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 if frontend_dir.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
 
+    @app.get("/sw.js", include_in_schema=False)
+    async def _serve_sw():
+        return FileResponse(str(frontend_dir / "sw.js"), media_type="application/javascript")
+
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    async def _serve_manifest():
+        return FileResponse(
+            str(frontend_dir / "manifest.webmanifest"),
+            media_type="application/manifest+json",
+        )
+
 
 @app.get("/")
 async def root_index():
