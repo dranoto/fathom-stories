@@ -1,38 +1,53 @@
 // frontend/js/eventTabs.js
-import { getEvents, setActiveEventId, getActiveEventId } from "./state.js";
+import { getEvents, setActiveEventId, getActiveEventId, getInboxOpen } from "./state.js";
 
-export function renderEventTabs(onSelect) {
+const INBOX_ID = "__inbox__";
+
+export function renderEventTabs(onSelectEvent, onSelectInbox) {
   const container = document.getElementById("event-tabs");
   const events = getEvents();
+  const activeId = getActiveEventId();
+  const inboxOpen = getInboxOpen();
+
   if (!events.length) {
-    container.innerHTML = `<div class="tabs-empty">No events yet — run <code>python -m app.cli fetch</code> and <code>python -m app.cli group</code> in the CLI, or click Refresh.</div>`;
+    container.innerHTML = `<div class="tabs-empty">No multi-article events yet — fetch and regroup some articles.</div>`;
     return;
   }
-  const activeId = getActiveEventId();
-  container.innerHTML = events
+
+  const tabsHtml = events
     .map(e => {
       const cls = [
         "event-tab",
-        e.id === activeId ? "active" : "",
+        e.id === activeId && !inboxOpen ? "active" : "",
         e.status === "cooling" ? "cooling" : "",
       ].filter(Boolean).join(" ");
       const badge = e.article_count > 0 ? `<span class="badge">${e.article_count}</span>` : "";
-      const statusLabel = e.status === "archived" ? " (archived)" : "";
       return `<div class="${cls}" data-event-id="${e.id}">
-        <span class="name">${escapeHtml(e.name)}</span>${badge}${statusLabel}
+        <span class="name">${escapeHtml(e.name)}</span>${badge}
       </div>`;
     })
     .join("");
 
-  container.querySelectorAll(".event-tab").forEach(el => {
+  const inboxCls = inboxOpen ? "active" : "";
+  const inboxHtml = `<div class="event-tab inbox-tab ${inboxCls}" data-inbox="1">
+    <span class="name">Inbox</span>
+  </div>`;
+
+  container.innerHTML = tabsHtml + inboxHtml;
+
+  container.querySelectorAll(".event-tab[data-event-id]").forEach(el => {
     el.addEventListener("click", () => {
       const id = parseInt(el.dataset.eventId, 10);
       setActiveEventId(id);
-      onSelect(id);
+      onSelectEvent(id);
     });
+  });
+  container.querySelectorAll(".event-tab[data-inbox]").forEach(el => {
+    el.addEventListener("click", () => onSelectInbox());
   });
 }
 
-function escapeHtml(s) {
+export { INBOX_ID };
+export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

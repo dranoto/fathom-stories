@@ -1,44 +1,54 @@
 // frontend/script.js
-import { listEvents, stats, runGrouping, listReadArticleIds } from "./js/apiService.js";
-import { setEvents, setActiveEventId, setReadIds, getActiveEventId } from "./js/state.js";
+import {
+  listEvents, stats, runGrouping, runRegroup, listReadArticleIds,
+  listUngroupedArticles,
+} from "./js/apiService.js";
+import {
+  setEvents, setActiveEventId, setReadIds, getActiveEventId,
+  setInboxOpen, getInboxOpen,
+} from "./js/state.js";
 import { renderEventTabs } from "./js/eventTabs.js";
-import { renderActiveEventPane } from "./js/timeline.js";
+import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
 
 const REFRESH_MS = 30000;
 
 async function refreshEvents() {
+  let all = [];
   try {
-    const [active, cooling] = await Promise.all([
-      listEvents("active"),
-      listEvents("cooling"),
-    ]);
-    const all = [...active, ...cooling].sort((a, b) => {
-      const ta = a.last_article_at ? new Date(a.last_article_at).getTime() : 0;
-      const tb = b.last_article_at ? new Date(b.last_article_at).getTime() : 0;
-      return tb - ta;
-    });
+    all = await listEvents({ minArticles: 2 });
     setEvents(all);
-    renderEventTabs(onTabSelect);
-
-    const activeId = getActiveEventId();
-    if (activeId && all.some(e => e.id === activeId)) {
-      await renderActiveEventPane(activeId);
-    } else if (all.length > 0) {
-      setActiveEventId(all[0].id);
-      await renderActiveEventPane(all[0].id);
-    } else {
-      document.getElementById("event-pane").innerHTML =
-        `<div class="pane-empty">No active or cooling events. Run <code>fetch</code> + <code>group</code> in CLI, or click "Run grouping" below.</div>`;
-    }
   } catch (e) {
     setStatus("error", `load failed: ${e.message}`);
+    return;
+  }
+  renderEventTabs(onTabSelect, onInboxSelect);
+
+  const activeId = getActiveEventId();
+  if (getInboxOpen()) {
+    await renderInboxPane();
+  } else if (activeId && all.some(e => e.id === activeId)) {
+    await renderActiveEventPane(activeId);
+  } else if (all.length > 0) {
+    setActiveEventId(all[0].id);
+    await renderActiveEventPane(all[0].id);
+  } else {
+    setInboxOpen(true);
+    renderEventTabs(onTabSelect, onInboxSelect);
+    await renderInboxPane();
   }
 }
 
 async function onTabSelect(eventId) {
-  renderEventTabs(onTabSelect);
+  setInboxOpen(false);
+  renderEventTabs(onTabSelect, onInboxSelect);
   await renderActiveEventPane(eventId);
+}
+
+async function onInboxSelect() {
+  setInboxOpen(true);
+  renderEventTabs(onTabSelect, onInboxSelect);
+  await renderInboxPane();
 }
 
 function setStatus(kind, text) {
@@ -51,7 +61,10 @@ function setStatus(kind, text) {
 async function refreshStats() {
   try {
     const s = await stats();
-    setStatus("ok", `${s.articles_total} articles · ${s.events_active} active · ${s.events_cooling} cooling · ${s.proposals_pending} proposals pending`);
+    setStatus(
+      "ok",
+      `${s.articles_total} articles · ${s.articles_ungrouped} in inbox · ${s.events_active} active · ${s.events_cooling} cooling`
+    );
   } catch (e) {
     setStatus("error", e.message);
   }
@@ -72,6 +85,21 @@ async function bootstrap() {
     await refreshEvents();
     await refreshReadIds();
     await refreshStats();
+  });
+  document.getElementById("btn-regroup-top").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Regrouping…";
+    try {
+      await runRegroup();
+      btn.textContent = "Reloading…";
+      setTimeout(() => window.location.reload(), 400);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = orig;
+      alert("Regroup failed: " + err.message);
+    }
   });
   setInterval(async () => {
     await refreshEvents();

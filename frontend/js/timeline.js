@@ -1,7 +1,7 @@
 // frontend/js/timeline.js
-import { getActiveEventDetail, isRead, setActiveEventDetail } from "./state.js";
-import { getEvent, generateEventSummary } from "./apiService.js";
-import { renderEventTabs } from "./eventTabs.js";
+import { getActiveEventDetail, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles } from "./state.js";
+import { getEvent, generateEventSummary, listUngroupedArticles, runRegroup } from "./apiService.js";
+import { renderEventTabs, escapeHtml as tabsEscape } from "./eventTabs.js";
 
 export async function renderActiveEventPane(eventId) {
   const pane = document.getElementById("event-pane");
@@ -148,4 +148,86 @@ function formatRelative(d) {
 function formatDate(d) {
   if (typeof d === "string") d = new Date(d);
   return d.toLocaleString();
+}
+
+export async function renderInboxPane() {
+  const pane = document.getElementById("event-pane");
+  pane.innerHTML = `<div class="pane-empty">Loading inbox…</div>`;
+
+  let articles;
+  try {
+    articles = await listUngroupedArticles();
+  } catch (e) {
+    pane.innerHTML = `<div class="pane-empty">Error loading inbox: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  setUngroupedArticles(articles);
+
+  const header = `
+    <div class="event-header">
+      <h1>Inbox</h1>
+      <div class="meta">
+        <span>${articles.length} ungrouped article${articles.length === 1 ? "" : "s"}</span>
+        <span>·</span>
+        <button id="btn-regroup" class="btn-secondary">Regroup now</button>
+      </div>
+    </div>
+  `;
+
+  if (articles.length === 0) {
+    pane.innerHTML = header + `<div class="pane-empty">All articles are in events. ✓</div>`;
+    attachRegroupHandler(pane);
+    return;
+  }
+
+  const rows = articles
+    .map(a => {
+      const readClass = isRead(a.id) ? "read" : "";
+      const uncertain = (a.grouping_confidence || 0) < 0.5 ? "uncertain" : "";
+      const importance = a.importance_score || 0;
+      const sizeClass = importance >= 0.7 ? "size-lg" : importance < 0.3 ? "size-sm" : "size-md";
+      const proposed = a.proposed_event_name ? `<span class="proposed">${escapeHtml(a.proposed_event_name)}</span>` : "";
+      const ts = a.published_date ? formatRelative(new Date(a.published_date)) : "?";
+      return `<div class="timeline-row">
+        <div class="ts">${escapeHtml(ts)}</div>
+        <div class="bubble ${sizeClass} ${readClass} ${uncertain}" data-article-id="${a.id}">
+          <div class="bubble-title">${escapeHtml(a.title || "(untitled)")}</div>
+          <div class="bubble-meta">
+            <span class="imp" title="importance ${importance.toFixed(2)}"></span>
+            <span>${escapeHtml(a.publisher_name || "")}</span>
+            ${proposed}
+          </div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  pane.innerHTML = header + `<div class="timeline">${rows}</div>`;
+  pane.querySelectorAll(".bubble").forEach(el => {
+    el.addEventListener("click", () => {
+      const id = parseInt(el.dataset.articleId, 10);
+      window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: id } }));
+    });
+  });
+  attachRegroupHandler(pane);
+}
+
+function attachRegroupHandler(pane) {
+  const btn = pane.querySelector("#btn-regroup");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Regrouping…";
+    try {
+      const result = await runRegroup();
+      const r = JSON.stringify(result);
+      window.dispatchEvent(new CustomEvent("regroup-done", { detail: { result } }));
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = orig;
+      alert("Regroup failed: " + e.message);
+    }
+  });
 }

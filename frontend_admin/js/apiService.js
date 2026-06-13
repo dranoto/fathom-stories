@@ -1,5 +1,5 @@
 // frontend_admin/js/apiService.js
-const API = "http://localhost:8000";  // call the main API from the admin UI
+const API = "";  // same origin — admin frontend served by the admin API on its own port
 
 async function handleFetch(url, options = {}) {
   const res = await fetch(API + url, {
@@ -15,6 +15,7 @@ async function handleFetch(url, options = {}) {
 }
 
 export const listEvents = (status) => handleFetch(`/api/events${status ? `?status=${status}` : ""}`);
+export const listAllEvents = () => handleFetch(`/api/events`);
 export const getEvent = (id) => handleFetch(`/api/events/${id}`);
 export const createEvent = (name, description) => handleFetch(`/api/events`, {
   method: "POST", body: JSON.stringify({ name, description }),

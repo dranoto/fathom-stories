@@ -108,3 +108,12 @@ body {
   color: var(--text-dim);
   margin-left: 2px;
 }
+.event-tab.inbox-tab {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.event-tab.inbox-tab.active {
+  color: var(--text);
+  font-style: normal;
+}

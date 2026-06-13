@@ -14,9 +14,12 @@ async function handleFetch(url, options = {}) {
   return res.json();
 }
 
-export async function listEvents(status) {
-  const qs = status ? `?status=${status}` : "";
-  return handleFetch(`/api/events${qs}`);
+export async function listEvents({ status, minArticles } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (minArticles !== undefined) params.set("min_articles", String(minArticles));
+  const qs = params.toString();
+  return handleFetch(`/api/events${qs ? "?" + qs : ""}`);
 }
 
 export async function getEvent(id) {
@@ -48,10 +51,18 @@ export async function listReadArticleIds() {
   return new Set(articles.filter(a => a.is_read).map(a => a.id));
 }
 
+export async function listUngroupedArticles() {
+  return handleFetch(`/api/articles?ungrouped=true&limit=200`);
+}
+
 export async function stats() {
   return handleFetch(`/api/events/_stats/all`);
 }
 
 export async function runGrouping() {
   return handleFetch(`/api/grouping/run`, { method: "POST" });
+}
+
+export async function runRegroup() {
+  return handleFetch(`/api/grouping/regroup`, { method: "POST" });
 }

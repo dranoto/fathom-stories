@@ -153,6 +153,7 @@
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 .bubble-meta .imp {
   display: inline-block;
@@ -160,6 +161,14 @@
   border-radius: 50%;
   background: var(--accent);
   opacity: 0.6;
+}
+.bubble-meta .proposed {
+  background: var(--bg-elev-2);
+  color: var(--warn);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px dashed var(--warn);
 }
 .bubble.uncertain .bubble-meta .imp {
   background: var(--bubble-uncertain);
