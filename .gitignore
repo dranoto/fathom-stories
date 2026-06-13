@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Secrets / config
+.env
+
+# Data (databases, logs)
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+logs/
+
+# Scraper extension (kept out of VCS so the bypass-paywalls build is downloaded fresh)
+# Note: the Fathom project historically kept this in the repo. fathom-stories follows the same convention.
+# If you want to track it, change to: !scraper_assistant/
+scraper_assistant/

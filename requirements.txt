@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+langchain
+langchain-openai
+feedparser
+playwright
+sqlalchemy
+apscheduler
+bleach
+beautifulsoup4
+readability-lxml
+lxml_html_clean

@@ -1,0 +1,18 @@
+@media (max-width: 900px) {
+  .app-main.has-reader {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 60vh;
+  }
+  .reader-pane {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 600px) {
+  .event-header h1 { font-size: 18px; }
+  .summary-card { padding: 14px; }
+  .timeline::before { left: 60px; }
+  .timeline-row { grid-template-columns: 60px 1fr; gap: 12px; }
+  .timeline-row .ts { padding-right: 10px; font-size: 10px; }
+}

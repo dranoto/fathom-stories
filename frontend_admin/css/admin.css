@@ -1,0 +1,192 @@
+:root {
+  --bg: #0f1419;
+  --bg-elev: #1a1f2e;
+  --bg-elev-2: #232938;
+  --text: #e6e9ef;
+  --text-dim: #8b95a7;
+  --accent: #4ade80;
+  --warn: #fbbf24;
+  --error: #f87171;
+  --border: #2a3142;
+  --info: #60a5fa;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+button:hover { background: var(--border); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+button.btn-primary:hover { background: #6ee7a0; }
+button.btn-danger { background: var(--error); color: #000; border-color: var(--error); }
+button.btn-link { background: none; border: none; color: var(--accent); }
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 16px;
+}
+.brand .logo { color: var(--accent); font-size: 20px; }
+.brand .port { color: var(--text-dim); font-size: 12px; font-weight: 400; }
+.actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.admin-stats {
+  padding: 8px 20px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+}
+.admin-stats .stat strong { color: var(--text); margin-right: 4px; }
+
+.admin-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 20px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.atab {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 10px 16px;
+  border-radius: 6px 6px 0 0;
+  position: relative;
+  top: 1px;
+}
+.atab:hover { color: var(--text); }
+.atab.active {
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom: none;
+}
+.atab .badge {
+  background: var(--info);
+  color: #000;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
+}
+
+.admin-main {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.list-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+.list-card .meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+}
+.list-card .title { font-weight: 500; }
+.list-card .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.list-card .status-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+}
+.list-card .status-tag.active { background: var(--accent); color: #000; }
+.list-card .status-tag.cooling { background: var(--info); color: #000; }
+.list-card .status-tag.archived { background: var(--bg-elev-2); color: var(--text-dim); }
+
+.proposal-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--info);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.proposal-card.kind-merge { border-left-color: var(--warn); }
+.proposal-card.kind-split { border-left-color: var(--info); }
+.proposal-card.kind-cool { border-left-color: var(--text-dim); }
+.proposal-card.kind-revive { border-left-color: var(--accent); }
+.proposal-card.kind-new { border-left-color: var(--info); }
+.proposal-card.applied { opacity: 0.5; }
+.proposal-card .actions { margin-top: 8px; display: flex; gap: 6px; }
+
+.empty {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+}
+.toast {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  max-width: 360px;
+}
+.toast.error { border-color: var(--error); }
+.toast.success { border-color: var(--accent); }

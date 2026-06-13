@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>fathom-stories</title>
+  <link rel="stylesheet" href="/static/css/base.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="/static/css/header.css" />
+  <link rel="stylesheet" href="/static/css/timeline.css" />
+  <link rel="stylesheet" href="/static/css/reader.css" />
+  <link rel="stylesheet" href="/static/css/responsive.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="logo">●</span>
+      <span class="title">fathom-stories</span>
+    </div>
+    <div class="header-status" id="header-status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">loading…</span>
+    </div>
+    <div class="header-actions">
+      <button id="btn-refresh" class="btn-secondary" title="Refresh events">↻</button>
+      <a href="http://localhost:8001" target="_blank" class="btn-secondary" title="Open admin (separate port)">admin</a>
+    </div>
+  </header>
+
+  <nav class="event-tabs" id="event-tabs">
+    <div class="tabs-empty" id="tabs-empty">No events yet — fetch and group some articles.</div>
+  </nav>
+
+  <main class="app-main">
+    <section class="event-pane" id="event-pane">
+      <div class="pane-empty" id="pane-empty">Select an event tab to view its timeline.</div>
+    </section>
+
+    <aside class="reader-pane" id="reader-pane" hidden>
+      <div class="reader-header">
+        <button id="btn-close-reader" class="btn-icon" title="Close">×</button>
+        <div class="reader-source" id="reader-source"></div>
+      </div>
+      <div class="reader-body" id="reader-body"></div>
+      <div class="reader-footer">
+        <a id="reader-original" href="#" target="_blank" rel="noopener" class="btn-link">Open original ↗</a>
+        <button id="btn-toggle-read" class="btn-secondary">Mark unread</button>
+      </div>
+    </aside>
+  </main>
+
+  <div class="toast-container" id="toasts"></div>
+
+  <script type="module" src="/static/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+// frontend/js/apiService.js
+const MAIN_API = "";  // same origin
+
+async function handleFetch(url, options = {}) {
+  const res = await fetch(MAIN_API + url, {
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    ...options,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+export async function listEvents(status) {
+  const qs = status ? `?status=${status}` : "";
+  return handleFetch(`/api/events${qs}`);
+}
+
+export async function getEvent(id) {
+  return handleFetch(`/api/events/${id}`);
+}
+
+export async function getEventSummary(id) {
+  return handleFetch(`/api/events/${id}/summary`);
+}
+
+export async function generateEventSummary(id) {
+  return handleFetch(`/api/events/${id}/summary`, { method: "POST" });
+}
+
+export async function getArticle(id) {
+  return handleFetch(`/api/articles/${id}`);
+}
+
+export async function markRead(id) {
+  return handleFetch(`/api/articles/${id}/read`, { method: "POST" });
+}
+
+export async function markUnread(id) {
+  return handleFetch(`/api/articles/${id}/read`, { method: "DELETE" });
+}
+
+export async function listReadArticleIds() {
+  const articles = await handleFetch(`/api/articles?limit=500`);
+  return new Set(articles.filter(a => a.is_read).map(a => a.id));
+}
+
+export async function stats() {
+  return handleFetch(`/api/events/_stats/all`);
+}
+
+export async function runGrouping() {
+  return handleFetch(`/api/grouping/run`, { method: "POST" });
+}
