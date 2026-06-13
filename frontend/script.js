@@ -1,15 +1,16 @@
 // frontend/script.js
 import {
-  listEvents, stats, runGrouping, runRegroup, listReadArticleIds,
+  listEvents, stats, runGrouping, runRegroup, runFetch, listReadArticleIds,
   listUngroupedArticles,
 } from "./js/apiService.js";
 import {
   setEvents, setActiveEventId, setReadIds, getActiveEventId,
-  setInboxOpen, getInboxOpen,
+  setInboxOpen, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
 import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
+import { loadTheme, setupThemeButton } from "./js/theme.js";
 
 const REFRESH_MS = 30000;
 
@@ -61,9 +62,10 @@ function setStatus(kind, text) {
 async function refreshStats() {
   try {
     const s = await stats();
+    const coolingPart = s.events_cooling > 0 ? ` · ${s.events_cooling} cooling` : "";
     setStatus(
       "ok",
-      `${s.articles_total} articles · ${s.articles_ungrouped} in inbox · ${s.events_active} active · ${s.events_cooling} cooling`
+      `${s.articles_total} articles · ${s.articles_ungrouped} in inbox · ${s.events_active} active${coolingPart}`
     );
   } catch (e) {
     setStatus("error", e.message);
@@ -79,12 +81,45 @@ async function refreshReadIds() {
   }
 }
 
+async function refreshInboxCounts() {
+  try {
+    const articles = await listUngroupedArticles();
+    const total = articles.length;
+    const read = articles.filter(a => a.is_read).length;
+    const unread = total - read;
+    setInboxCounts(total, read, unread);
+    renderEventTabs(onTabSelect, onInboxSelect);
+  } catch (e) {
+    console.warn("inbox counts fetch failed:", e);
+  }
+}
+
 async function bootstrap() {
+  loadTheme();
+  setupThemeButton();
   setupReader();
-  document.getElementById("btn-refresh").addEventListener("click", async () => {
-    await refreshEvents();
-    await refreshReadIds();
-    await refreshStats();
+  document.getElementById("btn-refresh").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Fetching…";
+    try {
+      const fetchResult = await runFetch();
+      if (fetchResult.new_articles > 0) {
+        btn.textContent = "Grouping…";
+        try { await runGrouping(); } catch (_) { /* ok if no key */ }
+      }
+      btn.textContent = "Refreshing…";
+      await refreshEvents();
+      await refreshReadIds();
+      await refreshInboxCounts();
+      await refreshStats();
+    } catch (err) {
+      alert("Refresh failed: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
   });
   document.getElementById("btn-regroup-top").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
@@ -104,10 +139,12 @@ async function bootstrap() {
   setInterval(async () => {
     await refreshEvents();
     await refreshReadIds();
+    await refreshInboxCounts();
   }, REFRESH_MS);
   setInterval(refreshStats, 60000);
 
   await refreshReadIds();
+  await refreshInboxCounts();
   await refreshEvents();
   await refreshStats();
 }

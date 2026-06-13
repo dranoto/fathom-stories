@@ -117,3 +117,16 @@ body {
   color: var(--text);
   font-style: normal;
 }
+.inbox-badge {
+  font-style: normal;
+  font-size: 11px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
+}
+.inbox-badge .sep {
+  margin: 0 2px;
+  opacity: 0.5;
+}

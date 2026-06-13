@@ -1,5 +1,5 @@
 // frontend/js/eventTabs.js
-import { getEvents, setActiveEventId, getActiveEventId, getInboxOpen } from "./state.js";
+import { getEvents, setActiveEventId, getActiveEventId, getInboxOpen, getInboxCounts } from "./state.js";
 
 const INBOX_ID = "__inbox__";
 
@@ -8,9 +8,10 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
   const events = getEvents();
   const activeId = getActiveEventId();
   const inboxOpen = getInboxOpen();
+  const { total: inboxN, read: inboxR, unread: inboxU } = getInboxCounts();
 
-  if (!events.length) {
-    container.innerHTML = `<div class="tabs-empty">No multi-article events yet — fetch and regroup some articles.</div>`;
+  if (!events.length && inboxN === 0) {
+    container.innerHTML = `<div class="tabs-empty">No events yet — fetch and regroup some articles.</div>`;
     return;
   }
 
@@ -29,8 +30,11 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
     .join("");
 
   const inboxCls = inboxOpen ? "active" : "";
+  const inboxBadge = inboxN > 0
+    ? `<span class="badge inbox-badge" title="${inboxU} unread, ${inboxR} read">${inboxU}<span class="sep">/</span>${inboxN}</span>`
+    : "";
   const inboxHtml = `<div class="event-tab inbox-tab ${inboxCls}" data-inbox="1">
-    <span class="name">Inbox</span>
+    <span class="name">Inbox</span>${inboxBadge}
   </div>`;
 
   container.innerHTML = tabsHtml + inboxHtml;

@@ -17,7 +17,6 @@ from ..schemas.event import (
 )
 from ..dependencies import get_llm_summary
 from ..security import verify_event_exists
-from ..grouping.summarizer import generate_major_summary
 from ..grouping.feedback import record_correction
 from ..grouping import lifecycle as lifecycle_module
 from .. import config as app_config
@@ -302,71 +301,16 @@ async def generate_event_summary(
     request: Request,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
-    event = verify_event_exists(db, event_id)
-    articles = (
-        db.query(Article)
-        .filter(Article.event_id == event_id)
-        .order_by(desc(Article.published_date))
-        .all()
-    )
-    if not articles:
-        raise HTTPException(status_code=400, detail="No articles in event")
-    articles_data = [
-        {
-            "id": a.id, "title": a.title, "publisher_name": a.publisher_name,
-            "published_date": a.published_date.isoformat() if a.published_date else None,
-            "url": a.url, "word_count": a.word_count,
-            "scraped_text_content": a.scraped_text_content, "rss_description": a.rss_description,
-        }
-        for a in articles
-    ]
-    prior_summary = (
-        db.query(EventSummary)
-        .filter(EventSummary.event_id == event_id)
-        .order_by(desc(EventSummary.generated_at))
-        .first()
-    )
-    prior_json = prior_summary.summary_json if prior_summary else None
+    verify_event_exists(db, event_id)
     try:
         llm = get_llm_summary(request)
-        summary_json = await generate_major_summary(
-            event_name=event.name,
-            articles=articles_data,
-            prompt_template=app_config.DEFAULT_MAJOR_SUMMARY_PROMPT,
-            prior_summary_json=prior_json,
-            llm=llm,
-        )
-    except Exception as e:
-        logger.error(f"Error generating major summary: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate summary: {e}")
-    article_ids_used = [a["id"] for a in articles_data]
-    summary_json["article_ids"] = article_ids_used
-    new_summary = EventSummary(
-        event_id=event_id,
-        summary_json=summary_json,
-        article_ids=article_ids_used,
-        article_count=len(articles_data),
-        model_used=app_config.DEFAULT_SUMMARY_MODEL_NAME,
-    )
-    db.add(new_summary)
-    event.last_summary_at = datetime.now(timezone.utc)
-    event.summary_article_count = len(articles_data)
-    event.summary_version = (event.summary_version or 0) + 1
-    try:
-        db.commit()
-        db.refresh(new_summary)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error saving event summary: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to save summary")
-    return EventSummaryResponse(
-        id=new_summary.id, event_id=new_summary.event_id,
-        summary_json=EventSummaryData(**new_summary.summary_json),
-        article_ids=new_summary.article_ids or [],
-        generated_at=new_summary.generated_at,
-        article_count=new_summary.article_count,
-        model_used=new_summary.model_used,
-    )
+    except HTTPException:
+        raise
+    from ..grouping.summary_service import generate_initial_summary_for_event
+    ok = await generate_initial_summary_for_event(event_id, llm)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to generate summary")
+    return await get_event_summary(event_id, db)
 
 
 @router.get("/{event_id}/summary")

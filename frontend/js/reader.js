@@ -1,11 +1,12 @@
 // frontend/js/reader.js
-import { getArticle, markRead, markUnread } from "./apiService.js";
+import { getArticle, getEvent, markRead, markUnread, generateEventSummary } from "./apiService.js";
 import { isRead, markRead as stateMarkRead, markUnread as stateMarkUnread } from "./state.js";
 
 let currentArticle = null;
+let currentSummary = null;
+let currentEventId = null;
 
 export function setupReader() {
-  const main = document.querySelector(".app-main");
   const close = document.getElementById("btn-close-reader");
   const toggle = document.getElementById("btn-toggle-read");
 
@@ -14,8 +15,17 @@ export function setupReader() {
     await openArticle(id);
   });
 
+  window.addEventListener("open-summary", async (e) => {
+    const id = e.detail.eventId;
+    await openSummary(id);
+  });
+
   close.addEventListener("click", () => closeReader());
   toggle.addEventListener("click", async () => {
+    if (currentSummary && currentEventId) {
+      await regenerateSummary();
+      return;
+    }
     if (!currentArticle) return;
     if (isRead(currentArticle.id)) {
       await markUnread(currentArticle.id);
@@ -51,9 +61,12 @@ async function openArticle(id) {
     return;
   }
   currentArticle = article;
+  currentSummary = null;
+  currentEventId = null;
 
   source.textContent = `${article.publisher_name || ""} · ${article.published_date ? new Date(article.published_date).toLocaleString() : ""}`;
   orig.href = article.url;
+  orig.style.display = "";
 
   const html = article.full_html_content || `<pre>${escapeHtml(article.scraped_text_content || article.rss_description || "")}</pre>`;
   body.innerHTML = `
@@ -81,6 +94,106 @@ function closeReader() {
   pane.hidden = true;
   main.classList.remove("has-reader");
   currentArticle = null;
+  currentSummary = null;
+  currentEventId = null;
+}
+
+async function openSummary(eventId) {
+  const main = document.querySelector(".app-main");
+  const pane = document.getElementById("reader-pane");
+  const body = document.getElementById("reader-body");
+  const source = document.getElementById("reader-source");
+  const orig = document.getElementById("reader-original");
+  const toggle = document.getElementById("btn-toggle-read");
+
+  body.innerHTML = `<div class="pane-empty">Loading summary…</div>`;
+  pane.hidden = false;
+  main.classList.add("has-reader");
+  currentArticle = null;
+  currentEventId = eventId;
+
+  let event;
+  try {
+    event = await getEvent(eventId);
+  } catch (e) {
+    body.innerHTML = `<div class="pane-empty">Error: ${e.message}</div>`;
+    return;
+  }
+
+  const summary = event.latest_summary;
+  currentSummary = summary;
+  source.textContent = `${event.name} · Event Summary`;
+  orig.href = "#";
+  orig.style.display = "none";
+
+  if (!summary) {
+    body.innerHTML = `
+      <h1>${escapeHtml(event.name)} — Event Summary</h1>
+      <div class="reader-content">
+        <p>No summary yet. The summary is auto-generated after grouping and auto-updated when new articles join the event.</p>
+        <button id="btn-force-gen" class="btn-secondary">Generate now</button>
+      </div>
+    `;
+    toggle.textContent = "Generate";
+    const btn = body.querySelector("#btn-force-gen");
+    if (btn) {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Generating…";
+        try {
+          await generateEventSummary(eventId);
+          await openSummary(eventId);
+        } catch (e) {
+          alert("Failed: " + e.message);
+          btn.disabled = false;
+          btn.textContent = "Generate now";
+        }
+      });
+    }
+    return;
+  }
+
+  body.innerHTML = `
+    <h1>${escapeHtml(event.name)} — Event Summary</h1>
+    <div class="reader-meta">v${summary.article_count || 0} articles · ${formatDate(summary.generated_at)}</div>
+    <div class="reader-content">
+      <h2>Timeline narrative</h2>
+      <p>${escapeHtml(summary.timeline_narrative || "(none)")}</p>
+      <h2>Cross-source synthesis</h2>
+      <p>${escapeHtml(summary.cross_source_synthesis || "(none)")}</p>
+      <h2>Progressive update</h2>
+      <p>${escapeHtml(summary.progressive_summary || "(none)")}</p>
+      ${summary.key_developments && summary.key_developments.length ? `
+        <h2>Key developments</h2>
+        <ul>${summary.key_developments.map(k => `<li>${escapeHtml(k)}</li>`).join("")}</ul>
+      ` : ""}
+    </div>
+  `;
+  toggle.textContent = "Regenerate";
+  toggle.style.display = "";
+  orig.style.display = "none";
+}
+
+async function regenerateSummary() {
+  if (!currentEventId) return;
+  const toggle = document.getElementById("btn-toggle-read");
+  const orig = toggle.textContent;
+  toggle.disabled = true;
+  toggle.textContent = "Regenerating…";
+  try {
+    await generateEventSummary(currentEventId);
+    await openSummary(currentEventId);
+  } catch (e) {
+    alert("Regenerate failed: " + e.message);
+    toggle.disabled = false;
+    toggle.textContent = orig;
+  }
+}
+
+function formatDate(d) {
+  if (!d) return "";
+  if (typeof d === "string") d = new Date(d);
+  return d.toLocaleString();
 }
 
 function escapeHtml(s) {

@@ -6,6 +6,9 @@
   overflow: hidden;
   animation: slide-in 0.2s ease-out;
 }
+.reader-pane[hidden] {
+  display: none !important;
+}
 @keyframes slide-in {
   from { transform: translateX(20px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }

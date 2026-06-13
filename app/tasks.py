@@ -42,12 +42,24 @@ async def scheduled_rss_fetch() -> None:
         logger.info("TASKS: rss_fetch already running; skipping")
         return
     async with rss_update_lock:
-        logger.info("TASKS: scheduled_rss_fetch starting")
-        try:
-            with db_session_scope() as db:
-                await update_all_subscribed_feeds(db)
-        except Exception as e:
-            logger.error(f"TASKS: scheduled_rss_fetch failed: {e}", exc_info=True)
+        await _do_rss_fetch()
+
+
+async def _do_rss_fetch() -> int:
+    logger.info("TASKS: rss_fetch starting")
+    try:
+        with db_session_scope() as db:
+            return await update_all_subscribed_feeds(db)
+    except Exception as e:
+        logger.error(f"TASKS: rss_fetch failed: {e}", exc_info=True)
+        return 0
+
+
+async def run_rss_fetch() -> int:
+    if rss_update_lock.locked():
+        return 0
+    async with rss_update_lock:
+        return await _do_rss_fetch()
 
 
 async def scheduled_live_grouping() -> None:

@@ -1,6 +1,6 @@
 // frontend/js/timeline.js
-import { getActiveEventDetail, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles } from "./state.js";
-import { getEvent, generateEventSummary, listUngroupedArticles, runRegroup } from "./apiService.js";
+import { getActiveEventDetail, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts } from "./state.js";
+import { getEvent, listUngroupedArticles, runRegroup } from "./apiService.js";
 import { renderEventTabs, escapeHtml as tabsEscape } from "./eventTabs.js";
 
 export async function renderActiveEventPane(eventId) {
@@ -23,6 +23,11 @@ export async function renderActiveEventPane(eventId) {
   const lastArticleAt = ev.last_article_at ? new Date(ev.last_article_at) : null;
   const summaryStale = lastSummary && lastArticleAt && lastArticleAt > lastSummary;
 
+  const summaryBubble = renderSummaryBubble(summary, summaryStale, eventId);
+  const articleBubbles = articles.length === 0
+    ? `<div class="pane-empty">No articles in this event yet.</div>`
+    : articles.map(renderBubble).join("");
+
   const html = `
     <div class="event-header">
       <h1>${escapeHtml(ev.name)}</h1>
@@ -32,50 +37,38 @@ export async function renderActiveEventPane(eventId) {
         <span>status: ${ev.status}</span>
       </div>
     </div>
-    ${renderSummary(summary, summaryStale, eventId)}
     <div class="timeline">
-      ${articles.length === 0 ? `<div class="pane-empty">No articles in this event yet.</div>` : articles.map(renderBubble).join("")}
+      ${summaryBubble}
+      ${articleBubbles}
     </div>
   `;
   pane.innerHTML = html;
   attachBubbleHandlers(pane, eventId);
-  attachSummaryHandlers(pane, eventId);
+  attachSummaryBubbleHandler(pane, eventId);
 }
 
-function renderSummary(summary, stale, eventId) {
+function renderSummaryBubble(summary, stale, eventId) {
   if (!summary) {
-    return `<div class="summary-card">
-      <div class="actions">
-        <button id="btn-gen-summary" class="btn-secondary">Generate summary</button>
-        <span class="summary-stale">no summary yet</span>
+    return `<div class="timeline-row summary-row">
+      <div class="ts">—</div>
+      <div class="bubble summary-bubble size-md" data-summary-id="${eventId}">
+        <div class="bubble-title">Event Summary</div>
+        <div class="bubble-meta">
+          <span style="color:var(--warn)">no summary yet — will be auto-generated</span>
+        </div>
       </div>
     </div>`;
   }
-  return `<div class="summary-card">
-    <div class="summary-section">
-      <h3>Timeline narrative</h3>
-      <div>${escapeHtml(summary.timeline_narrative || "")}</div>
-    </div>
-    <div class="summary-section">
-      <h3>Cross-source synthesis</h3>
-      <div>${escapeHtml(summary.cross_source_synthesis || "")}</div>
-    </div>
-    <div class="summary-section">
-      <h3>Progressive update</h3>
-      <div>${escapeHtml(summary.progressive_summary || "")}</div>
-    </div>
-    ${summary.key_developments && summary.key_developments.length ? `
-      <div class="summary-section">
-        <h3>Key developments</h3>
-        <ul class="key-devs">${summary.key_developments.map(k => `<li>${escapeHtml(k)}</li>`).join("")}</ul>
+  const staleLabel = stale ? `<span style="color:var(--warn)">new articles since last summary</span>` : "";
+  return `<div class="timeline-row summary-row">
+    <div class="ts">summary</div>
+    <div class="bubble summary-bubble size-lg" data-summary-id="${eventId}">
+      <div class="bubble-title">Event Summary</div>
+      <div class="bubble-meta">
+        <span class="imp" style="background:var(--info)" title="v${summary.article_count || 0}"></span>
+        <span>${escapeHtml((summary.progressive_summary || "").slice(0, 100))}${(summary.progressive_summary || "").length > 100 ? "…" : ""}</span>
+        ${staleLabel}
       </div>
-    ` : ""}
-    <div class="actions">
-      <button id="btn-regen-summary" class="btn-secondary">Regenerate</button>
-      ${stale ? `<span class="summary-stale">new articles since last summary</span>` : ""}
-      <span style="margin-left:auto;color:var(--text-dim);font-size:11px">
-        v${(summary.article_count || 0)} articles · ${formatDate(summary.generated_at || new Date())}
-      </span>
     </div>
   </div>`;
 }
@@ -100,7 +93,7 @@ function renderBubble(a) {
 }
 
 function attachBubbleHandlers(pane, eventId) {
-  pane.querySelectorAll(".bubble").forEach(el => {
+  pane.querySelectorAll(".bubble[data-article-id]").forEach(el => {
     el.addEventListener("click", () => {
       const id = parseInt(el.dataset.articleId, 10);
       window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: id } }));
@@ -108,24 +101,12 @@ function attachBubbleHandlers(pane, eventId) {
   });
 }
 
-function attachSummaryHandlers(pane, eventId) {
-  const gen = pane.querySelector("#btn-gen-summary");
-  const regen = pane.querySelector("#btn-regen-summary");
-  const handler = async () => {
-    const btn = gen || regen;
-    btn.disabled = true;
-    btn.textContent = "Generating…";
-    try {
-      await generateEventSummary(eventId);
-      await renderActiveEventPane(eventId);
-    } catch (e) {
-      alert("Summary failed: " + e.message);
-      btn.disabled = false;
-      btn.textContent = btn.id === "btn-regen-summary" ? "Regenerate" : "Generate summary";
-    }
-  };
-  if (gen) gen.addEventListener("click", handler);
-  if (regen) regen.addEventListener("click", handler);
+function attachSummaryBubbleHandler(pane, eventId) {
+  const bubble = pane.querySelector(".bubble[data-summary-id]");
+  if (!bubble) return;
+  bubble.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
+  });
 }
 
 function escapeHtml(s) {
@@ -162,6 +143,7 @@ export async function renderInboxPane() {
     return;
   }
   setUngroupedArticles(articles);
+  setInboxCounts(articles.length, articles.filter(a => a.is_read).length, articles.filter(a => !a.is_read).length);
 
   const header = `
     <div class="event-header">

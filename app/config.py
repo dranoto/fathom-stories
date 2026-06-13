@@ -46,10 +46,16 @@ except ValueError:
     MAX_ARTICLES_PER_INDIVIDUAL_FEED = 15
 
 try:
-    DEFAULT_RSS_FETCH_INTERVAL_MINUTES = int(os.getenv("DEFAULT_RSS_FETCH_INTERVAL_MINUTES", 30))
+    DEFAULT_RSS_FETCH_INTERVAL_MINUTES = int(os.getenv("DEFAULT_RSS_FETCH_INTERVAL_MINUTES", "60"))
 except ValueError:
-    logger.warning("Invalid DEFAULT_RSS_FETCH_INTERVAL_MINUTES in .env. Using default 30.")
-    DEFAULT_RSS_FETCH_INTERVAL_MINUTES = 30
+    logger.warning("Invalid DEFAULT_RSS_FETCH_INTERVAL_MINUTES in .env. Using default 60.")
+    DEFAULT_RSS_FETCH_INTERVAL_MINUTES = 60
+
+try:
+    LIVE_GROUPING_INTERVAL_MINUTES = int(os.getenv("LIVE_GROUPING_INTERVAL_MINUTES", "60"))
+except ValueError:
+    logger.warning("Invalid LIVE_GROUPING_INTERVAL_MINUTES in .env. Using default 60.")
+    LIVE_GROUPING_INTERVAL_MINUTES = 60
 
 try:
     RECLUSTER_HOUR_UTC = int(os.getenv("RECLUSTER_HOUR_UTC", 3))
@@ -101,6 +107,12 @@ USE_HEADLESS_BROWSER = os.getenv("USE_HEADLESS_BROWSER", "True").lower() in ('tr
 
 DEFAULT_MINIMUM_WORD_COUNT = int(os.getenv("DEFAULT_MINIMUM_WORD_COUNT", "100"))
 MIN_ARTICLE_WORD_COUNT = int(os.getenv("MIN_ARTICLE_WORD_COUNT", "350"))
+
+try:
+    SCRAPE_FAILURE_RETRY_DAYS = int(os.getenv("SCRAPE_FAILURE_RETRY_DAYS", "7"))
+except ValueError:
+    logger.warning("Invalid SCRAPE_FAILURE_RETRY_DAYS in .env. Using default 7.")
+    SCRAPE_FAILURE_RETRY_DAYS = 7
 
 # --- LLM Temperature Configuration ---
 SUMMARY_LLM_TEMPERATURE = float(os.getenv("SUMMARY_LLM_TEMPERATURE", "0.2"))
@@ -162,6 +174,36 @@ Return EXACTLY this JSON structure (no markdown, no extra text):
 
 Articles to analyze:
 {article_texts}
+
+Return the JSON now:""")
+
+DEFAULT_SUMMARY_INCREMENTAL_PROMPT = os.getenv("DEFAULT_SUMMARY_INCREMENTAL_PROMPT", """You are updating an existing event summary with {new_count} new article(s) about {event_name}.
+
+There is a prior summary (JSON below) and {new_count} new article(s) to incorporate.
+
+Tasks:
+  1. Update the timeline_narrative to include the new developments. Keep it chronological.
+  2. Update the cross_source_synthesis if the new article(s) add a new angle or conflict.
+  3. Update the progressive_summary to focus on what's NEW since the prior summary.
+  4. Update key_developments: keep the most important milestones (max 5).
+  5. Update article_count to the new total.
+
+Return EXACTLY this JSON (no markdown, no extra text):
+{{
+  "timeline_narrative": "...",
+  "cross_source_synthesis": "...",
+  "progressive_summary": "...",
+  "key_developments": ["...", "..."],
+  "article_count": <int>,
+  "feed_count": <int>,
+  "date_range": "<earliest> - <latest>"
+}}
+
+Prior summary:
+{prior_summary_json}
+
+New article(s) to incorporate:
+{new_article_texts}
 
 Return the JSON now:""")
 

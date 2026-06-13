@@ -95,3 +95,57 @@ async def generate_major_summary(
     except Exception as e:
         logger.error(f"Error generating major summary for event '{event_name}': {e}", exc_info=True)
         raise
+
+
+def _format_articles_for_summary(articles: List[Dict[str, Any]]) -> str:
+    seen_urls = set()
+    parts: List[str] = []
+    for article in articles:
+        url = article.get("url", "Unknown URL")
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        title = article.get("title", "Untitled")
+        publisher = article.get("publisher_name", "Unknown Source")
+        published_date = article.get("published_date", "Unknown Date")
+        content = article.get("scraped_text_content", article.get("rss_description", ""))
+        if content:
+            parts.append(
+                f"--- Article ---\nTitle: {title}\nSource: {publisher} ({published_date})\nURL: {url}\nContent: {content}\n"
+            )
+        else:
+            parts.append(
+                f"--- Article ---\nTitle: {title}\nSource: {publisher} ({published_date})\nURL: {url}\nContent: No content available.\n"
+            )
+    return "\n".join(parts)
+
+
+async def generate_incremental_summary(
+    event_name: str,
+    new_articles: List[Dict[str, Any]],
+    prior_summary_json: Dict[str, Any],
+    llm: Optional[ChatOpenAI] = None,
+    prompt_template: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not llm:
+        raise RuntimeError("Summary LLM not available")
+    template = prompt_template or app_config.DEFAULT_SUMMARY_INCREMENTAL_PROMPT
+    new_article_texts = _format_articles_for_summary(new_articles)
+    prior_escaped = json.dumps(prior_summary_json, indent=2).replace('{', '{{').replace('}', '}}')
+    prompt = template.format(
+        event_name=event_name,
+        new_count=len(new_articles),
+        new_article_texts=new_article_texts,
+        prior_summary_json=prior_escaped,
+    )
+    try:
+        response = await llm.agenerate([[HumanMessage(content=prompt)]])
+        content = response.generations[0][0].text
+        summary_data = parse_major_summary_response(content)
+        return summary_data
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.error(f"Error generating incremental summary for '{event_name}': {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.error(f"Error generating incremental summary for '{event_name}': {e}", exc_info=True)
+        raise

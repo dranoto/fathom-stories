@@ -143,6 +143,19 @@ class ArticleRead(Base):
         return f"<ArticleRead(article_id={self.article_id}, read_at={self.read_at})>"
 
 
+class ScrapeFailure(Base):
+    __tablename__ = "scrape_failures"
+
+    url = Column(String, primary_key=True)
+    error = Column(Text, nullable=True)
+    attempt_count = Column(Integer, nullable=False, default=1)
+    first_attempted_at = Column(DateTime(timezone=True), default=_utcnow)
+    last_attempted_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<ScrapeFailure(url='{self.url[:50]}...', attempts={self.attempt_count})>"
+
+
 class KVSetting(Base):
     __tablename__ = "kv_settings"
 

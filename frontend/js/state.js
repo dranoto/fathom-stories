@@ -5,6 +5,9 @@ let activeEventDetail = null;
 let readArticleIds = new Set();
 let inboxOpen = false;
 let ungroupedArticles = [];
+let inboxTotal = 0;
+let inboxUnread = 0;
+let inboxRead = 0;
 
 export function getEvents() { return events; }
 export function setEvents(v) { events = v; }
@@ -21,3 +24,9 @@ export function getInboxOpen() { return inboxOpen; }
 export function setInboxOpen(v) { inboxOpen = v; }
 export function getUngroupedArticles() { return ungroupedArticles; }
 export function setUngroupedArticles(v) { ungroupedArticles = v; }
+export function getInboxCounts() { return { total: inboxTotal, read: inboxRead, unread: inboxUnread }; }
+export function setInboxCounts(total, read, unread) {
+  inboxTotal = total;
+  inboxRead = read;
+  inboxUnread = unread;
+}

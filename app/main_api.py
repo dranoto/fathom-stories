@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
         )
         scheduler.add_job(
             tasks.scheduled_live_grouping,
-            IntervalTrigger(minutes=app_config.DEFAULT_RSS_FETCH_INTERVAL_MINUTES),
+            IntervalTrigger(minutes=app_config.LIVE_GROUPING_INTERVAL_MINUTES),
             id="live_grouping",
             next_run_time=datetime.now(timezone.utc) + timedelta(seconds=45),
             max_instances=1, coalesce=True,

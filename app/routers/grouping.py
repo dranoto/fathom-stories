@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session as SQLAlchemySession
 
-from .. import database
+from .. import database, tasks
 from ..dependencies import get_llm_grouping
 from ..grouping import engine as grouping_engine
 from ..grouping import recluster as recluster_module
@@ -12,6 +12,18 @@ from ..grouping import lifecycle as lifecycle_module
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/grouping", tags=["grouping"])
+
+
+@router.post("/fetch")
+async def run_fetch(
+    db: SQLAlchemySession = Depends(database.get_db),
+):
+    try:
+        new_articles = await tasks.run_rss_fetch()
+    except Exception as e:
+        logger.error(f"FETCH endpoint failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Fetch failed: {e}")
+    return {"status": "ok", "new_articles": new_articles}
 
 
 @router.post("/run")

@@ -87,6 +87,11 @@ def fetch_active_events() -> Tuple[List[Event], List[Event]]:
 
 
 def apply_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts, _ = _apply_live(assignments)
+    return counts
+
+
+def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict[int, List[int]]]:
     counts = {
         "existing": 0,
         "new": 0,
@@ -94,6 +99,7 @@ def apply_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:
         "errors": 0,
     }
     now = datetime.now(timezone.utc)
+    event_increments: Dict[int, List[int]] = defaultdict(list)
 
     with db_session_scope() as db:
         for a in assignments:
@@ -120,6 +126,7 @@ def apply_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:
                         event.last_article_at = article.published_date or now
                     event.status = "active"
                     event.archived_at = None
+                    event_increments[event.id].append(article_id)
                     counts["existing"] += 1
                 elif decision == "new":
                     name = (a.get("event_name") or "").strip()
@@ -151,7 +158,7 @@ def apply_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:
                 logger.error(f"GROUPING: error applying assignment {a}: {e}", exc_info=True)
                 counts["errors"] += 1
     logger.info(f"GROUPING: applied assignments {counts}")
-    return counts
+    return counts, dict(event_increments)
 
 
 async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
@@ -189,7 +196,15 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
         return {"existing": 0, "new": 0, "uncategorized": 0, "errors": 1, "skipped": 0}
 
     assignments = parsed.get("assignments", [])
-    counts = apply_assignments(assignments)
+    counts, event_increments = _apply_live(assignments)
+
+    from .summary_service import generate_incremental_summary_for_event
+    for event_id, new_ids in event_increments.items():
+        try:
+            await generate_incremental_summary_for_event(event_id, new_ids, llm)
+        except Exception as e:
+            logger.error(f"Auto-incremental summary failed for event {event_id}: {e}", exc_info=True)
+
     return counts
 
 
@@ -228,10 +243,34 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
         return {"existing": 0, "new_events": 0, "new_singletons": 0, "uncategorized": 0, "errors": 1, "skipped": 0}
 
     assignments = parsed.get("assignments", [])
-    return apply_regroup_assignments(assignments)
+    counts, (new_event_ids, event_increments) = _apply_regroup_inner(assignments)
+
+    from .summary_service import (
+        generate_initial_summary_for_event,
+        generate_incremental_summary_for_event,
+    )
+    for new_event_id in new_event_ids:
+        try:
+            await generate_initial_summary_for_event(new_event_id, llm)
+        except Exception as e:
+            logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
+    for event_id, new_ids in event_increments.items():
+        if event_id in new_event_ids:
+            continue
+        try:
+            await generate_incremental_summary_for_event(event_id, new_ids, llm)
+        except Exception as e:
+            logger.error(f"Auto-incremental summary failed for event {event_id}: {e}", exc_info=True)
+
+    return counts
 
 
 def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts, _ = _apply_regroup_inner(assignments)
+    return counts
+
+
+def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Tuple[List[int], Dict[int, List[int]]]]:
     counts = {
         "existing": 0,
         "new_events": 0,
@@ -240,6 +279,8 @@ def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, in
         "errors": 0,
     }
     now = datetime.now(timezone.utc)
+    new_event_ids: List[int] = []
+    event_increments: Dict[int, List[int]] = defaultdict(list)
 
     new_clusters: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for a in assignments:
@@ -277,6 +318,7 @@ def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, in
                         event.last_article_at = article.published_date or now
                     event.status = "active"
                     event.archived_at = None
+                    event_increments[event.id].append(article_id)
                     counts["existing"] += 1
                 elif decision == "uncategorized":
                     counts["uncategorized"] += 1
@@ -303,6 +345,7 @@ def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, in
                 )
                 db.add(new_event)
                 db.flush()
+                new_event_ids.append(new_event.id)
                 for item in items:
                     art = db.query(Article).filter(Article.id == item.get("article_id")).first()
                     if not art:
@@ -314,6 +357,7 @@ def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, in
                     art.grouped_at = now
                     if not new_event.last_article_at or (art.published_date and art.published_date > new_event.last_article_at):
                         new_event.last_article_at = art.published_date or now
+                    event_increments[new_event.id].append(art.id)
                 counts["new_events"] += 1
             else:
                 for item in items:
@@ -326,4 +370,4 @@ def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, in
                 counts["new_singletons"] += 1
 
     logger.info(f"REGROUP: applied assignments {counts}")
-    return counts
+    return counts, (new_event_ids, dict(event_increments))

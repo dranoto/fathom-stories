@@ -9,12 +9,17 @@ from sqlalchemy.exc import IntegrityError
 from typing import Any, Optional, List # Added List
 from bs4 import BeautifulSoup
 
-from . import config as app_config 
-from .database import FeedSource, Article 
+from . import config as app_config
+from .database import FeedSource, Article, ScrapeFailure
 from .scraper import scrape_urls # Import the updated scraper function
 from langchain_core.documents import Document as LangchainDocument # For type hinting
 
 logger = logging.getLogger(__name__) # Added logger
+
+
+def now_dt():
+    return datetime.now(timezone.utc)
+
 
 async def _parse_feed_in_thread(feed_url: str):
     loop = asyncio.get_event_loop()
@@ -136,7 +141,22 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
         if not article_url:
             logger.warning(f"RSS_CLIENT: Feed entry for {feed_source.name} missing 'link'. Entry: {entry.get('title', 'N/A')}")
             continue
-        
+
+        recent_failure = (
+            db.query(ScrapeFailure)
+            .filter(ScrapeFailure.url == article_url)
+            .order_by(ScrapeFailure.last_attempted_at.desc())
+            .first()
+        )
+        if recent_failure:
+            retry_cutoff = now_dt() - timedelta(days=app_config.SCRAPE_FAILURE_RETRY_DAYS)
+            if recent_failure.last_attempted_at and recent_failure.last_attempted_at > retry_cutoff:
+                logger.debug(
+                    f"RSS_CLIENT: skipping {article_url} — scrape failed "
+                    f"{recent_failure.attempt_count}x, last at {recent_failure.last_attempted_at}"
+                )
+                continue
+
         processed_in_batch +=1
 
         existing_article = db.query(Article).filter(Article.url == article_url).first()
@@ -232,6 +252,23 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
             logger.warning(
                 f"RSS_CLIENT: dropping {article_url} — scraper error: {scraper_error}"
             )
+            existing_failure = (
+                db.query(ScrapeFailure)
+                .filter(ScrapeFailure.url == article_url)
+                .first()
+            )
+            if existing_failure:
+                existing_failure.attempt_count = (existing_failure.attempt_count or 1) + 1
+                existing_failure.last_attempted_at = now_dt()
+                existing_failure.error = str(scraper_error)[:1000]
+            else:
+                db.add(ScrapeFailure(
+                    url=article_url,
+                    error=str(scraper_error)[:1000],
+                    attempt_count=1,
+                    first_attempted_at=now_dt(),
+                    last_attempted_at=now_dt(),
+                ))
             continue
         if (word_count_to_save or 0) < app_config.MIN_ARTICLE_WORD_COUNT:
             logger.info(
@@ -320,7 +357,7 @@ async def update_all_subscribed_feeds(db: Session):
 
     if not feeds_to_update:
         logger.info("RSS_CLIENT_SCHEDULER: No feeds currently due for update.")
-        return
+        return 0
 
     logger.info(f"RSS_CLIENT_SCHEDULER: Found {len(feeds_to_update)} feeds to update.")
     
@@ -339,6 +376,7 @@ async def update_all_subscribed_feeds(db: Session):
             logger.error(f"RSS_CLIENT_SCHEDULER: Error processing feed: {error_msg}")
     
     logger.info(f"RSS_CLIENT_SCHEDULER: Finished feed update cycle. Total new articles committed across all feeds: {total_new_articles_overall}.")
+    return total_new_articles_overall
 
 async def update_single_feed(db: Session, feed_id: int):
     """

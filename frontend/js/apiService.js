@@ -66,3 +66,7 @@ export async function runGrouping() {
 export async function runRegroup() {
   return handleFetch(`/api/grouping/regroup`, { method: "POST" });
 }
+
+export async function runFetch() {
+  return handleFetch(`/api/grouping/fetch`, { method: "POST" });
+}
