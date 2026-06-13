@@ -80,6 +80,12 @@
   background: var(--bg);
   font-size: 13px;
 }
+.reader-event-picker[hidden] {
+  display: none !important;
+}
+.reader-footer button[hidden] {
+  display: none !important;
+}
 .reader-event-picker label {
   color: var(--text-dim);
   white-space: nowrap;

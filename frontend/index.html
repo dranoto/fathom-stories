@@ -6,12 +6,12 @@
   <title>Fathom Stories</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230f1419'/%3E%3Ccircle cx='32' cy='32' r='14' fill='%234ade80'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%230f1419'/%3E%3C/svg%3E" />
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230f1419'/%3E%3Ccircle cx='32' cy='32' r='14' fill='%234ade80'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%230f1419'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="/static/css/base.css" />
-  <link rel="stylesheet" href="/static/css/layout.css" />
-  <link rel="stylesheet" href="/static/css/header.css" />
-  <link rel="stylesheet" href="/static/css/timeline.css" />
-  <link rel="stylesheet" href="/static/css/reader.css" />
-  <link rel="stylesheet" href="/static/css/responsive.css" />
+  <link rel="stylesheet" href="/static/css/base.css?v=3" />
+  <link rel="stylesheet" href="/static/css/layout.css?v=3" />
+  <link rel="stylesheet" href="/static/css/header.css?v=3" />
+  <link rel="stylesheet" href="/static/css/timeline.css?v=3" />
+  <link rel="stylesheet" href="/static/css/reader.css?v=3" />
+  <link rel="stylesheet" href="/static/css/responsive.css?v=3" />
 </head>
 <body>
   <header class="app-header">
@@ -23,9 +23,17 @@
       <span class="dot" id="status-dot"></span>
       <span id="status-text">loading…</span>
     </div>
+    <div class="header-countdowns" id="header-countdowns">
+      <span class="countdown-chip" id="chip-refresh" title="Next automatic RSS refresh">
+        <span class="chip-label">refresh</span>
+        <span class="chip-time" id="chip-refresh-time">--:--</span>
+      </span>
+      <span class="countdown-chip" id="chip-regroup" title="Next automatic regroup">
+        <span class="chip-label">regroup</span>
+        <span class="chip-time" id="chip-regroup-time">--:--</span>
+      </span>
+    </div>
     <div class="header-actions">
-      <button id="btn-regroup-top" class="btn-secondary" title="Force a regroup of ungrouped articles">Regroup</button>
-      <button id="btn-refresh" class="btn-secondary" title="Refresh events">↻</button>
       <button id="btn-theme" class="btn-secondary btn-icon" title="Toggle light/dark">◐</button>
       <a href="http://localhost:8001" target="_blank" class="btn-secondary" title="Open admin (separate port)">admin</a>
     </div>
@@ -62,6 +70,6 @@
 
   <div class="toast-container" id="toasts"></div>
 
-  <script type="module" src="/static/script.js?v=5"></script>
+  <script type="module" src="/static/script.js?v=8"></script>
 </body>
 </html>

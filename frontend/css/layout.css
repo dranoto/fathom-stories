@@ -40,6 +40,49 @@ body {
 .header-status .dot.warn { background: var(--warn); }
 .header-status .dot.error { background: var(--error); }
 
+.header-countdowns {
+  display: flex;
+  gap: 6px;
+  margin-left: 12px;
+  align-items: center;
+}
+.countdown-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: default;
+}
+.countdown-chip .chip-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.countdown-chip .chip-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+.countdown-chip.due .chip-time {
+  color: var(--warn);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.countdown-chip.running .chip-time {
+  color: var(--info);
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .header-actions {
   display: flex;
   gap: 8px;

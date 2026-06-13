@@ -9,6 +9,10 @@ let currentEventId = null;
 export function setupReader() {
   const close = document.getElementById("btn-close-reader");
   const toggle = document.getElementById("btn-toggle-read");
+  const picker = document.getElementById("reader-event-picker");
+  if (picker) picker.hidden = true;
+  const removeBtn = document.getElementById("btn-remove-from-event");
+  if (removeBtn) removeBtn.hidden = true;
 
   window.addEventListener("open-reader", async (e) => {
     const id = e.detail.articleId;

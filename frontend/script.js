@@ -1,7 +1,6 @@
 // frontend/script.js
 import {
-  listEvents, stats, runGrouping, runRegroup, runFetch, listReadArticleIds,
-  listUngroupedArticles,
+  listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles,
 } from "./js/apiService.js";
 import {
   setEvents, setActiveEventId, setReadIds, getActiveEventId,
@@ -11,8 +10,7 @@ import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
 import { loadTheme, setupThemeButton } from "./js/theme.js";
-
-const REFRESH_MS = 30000;
+import { startCountdowns } from "./js/countdowns.js";
 
 async function refreshEvents() {
   let all = [];
@@ -94,54 +92,31 @@ async function refreshInboxCounts() {
   }
 }
 
+async function afterTimerFiredRefresh() {
+  await refreshEvents();
+  await refreshReadIds();
+  await refreshInboxCounts();
+  try { await runGrouping(); } catch (_) { /* ok if no LLM key */ }
+  await refreshEvents();
+  await refreshInboxCounts();
+  await refreshStats();
+}
+
+async function afterTimerFiredRegroup() {
+  await refreshEvents();
+  await refreshInboxCounts();
+  await refreshReadIds();
+  await refreshStats();
+}
+
 async function bootstrap() {
   loadTheme();
   setupThemeButton();
   setupReader();
-  document.getElementById("btn-refresh").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    const orig = btn.textContent;
-    btn.textContent = "Fetching…";
-    try {
-      const fetchResult = await runFetch();
-      if (fetchResult.new_articles > 0) {
-        btn.textContent = "Grouping…";
-        try { await runGrouping(); } catch (_) { /* ok if no key */ }
-      }
-      btn.textContent = "Refreshing…";
-      await refreshEvents();
-      await refreshReadIds();
-      await refreshInboxCounts();
-      await refreshStats();
-    } catch (err) {
-      alert("Refresh failed: " + err.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = orig;
-    }
+  startCountdowns({
+    onRefreshComplete: afterTimerFiredRefresh,
+    onRegroupComplete: afterTimerFiredRegroup,
   });
-  document.getElementById("btn-regroup-top").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    const orig = btn.textContent;
-    btn.textContent = "Regrouping…";
-    try {
-      await runRegroup();
-      btn.textContent = "Reloading…";
-      setTimeout(() => window.location.reload(), 400);
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = orig;
-      alert("Regroup failed: " + err.message);
-    }
-  });
-  setInterval(async () => {
-    await refreshEvents();
-    await refreshReadIds();
-    await refreshInboxCounts();
-  }, REFRESH_MS);
-  setInterval(refreshStats, 60000);
 
   window.addEventListener("article-moved", async () => {
     await refreshEvents();
@@ -155,11 +130,6 @@ async function bootstrap() {
     await refreshInboxCounts();
     await refreshReadIds();
     await refreshStats();
-    const detail = e && e.detail;
-    if (detail && detail.eventId) {
-      const stillOpen = document.querySelector(`.event-tab[data-event-id="${detail.eventId}"]`);
-      if (!stillOpen) return;
-    }
   });
 
   await refreshReadIds();
