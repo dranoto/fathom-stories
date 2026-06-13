@@ -70,17 +70,30 @@ def cmd_fetch(_args):
 
 
 def cmd_cleanup_bad(_args):
-    from sqlalchemy import or_
+    from sqlalchemy import or_, func
     from .database.models import Article
+    from .grouping.content_classifier import classify_article, NON_EVENT_TYPES
     create_db_and_tables()
+    cutoff = app_config.MIN_ARTICLE_WORD_COUNT
     with db_session_scope() as db:
-        q = db.query(Article).filter(or_(
-            Article.scraped_text_content.like("Scraping Error:%"),
-            Article.word_count < app_config.MIN_ARTICLE_WORD_COUNT,
-        ))
-        ids = [a.id for a in q.all()]
-        n = q.delete(synchronize_session=False)
-    print(f"Deleted {n} bad articles (scraping errors or < {app_config.MIN_ARTICLE_WORD_COUNT} words)")
+        all_articles = db.query(Article).all()
+        to_delete = []
+        for a in all_articles:
+            if a.scraped_text_content and a.scraped_text_content.startswith("Scraping Error:"):
+                to_delete.append(a.id)
+                continue
+            if (a.word_count or 0) < cutoff:
+                to_delete.append(a.id)
+                continue
+            ct = classify_article(
+                title=a.title or "",
+                rss_description=a.rss_description or "",
+                scraped_text=a.scraped_text_content or "",
+            )
+            if ct in NON_EVENT_TYPES:
+                to_delete.append(a.id)
+        n = db.query(Article).filter(Article.id.in_(to_delete)).delete(synchronize_session=False)
+    print(f"Deleted {n} bad articles (scraping errors, too short, or non-event content_type)")
 
 
 def cmd_group(_args):

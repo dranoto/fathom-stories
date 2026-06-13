@@ -238,14 +238,14 @@ async def delete_event(
 async def add_article_to_event(
     event_id: int,
     article_id: int,
+    request: Request,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = verify_event_exists(db, event_id)
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    if article.event_id == event_id:
-        return {"message": "Article already in event", "article_id": article_id, "event_id": event_id}
+    already_in = (article.event_id == event_id)
     original = article.event_id
     article.event_id = event_id
     article.grouped_at = datetime.now(timezone.utc)
@@ -265,7 +265,25 @@ async def add_article_to_event(
         db.rollback()
         logger.error(f"Error adding article to event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to add article to event")
-    return {"message": "Article added to event", "article_id": article_id, "event_id": event_id}
+
+    summary_regenerated = False
+    if not already_in:
+        try:
+            llm = get_llm_summary(request)
+            from ..grouping.summary_service import generate_incremental_summary_for_event
+            summary_regenerated = await generate_incremental_summary_for_event(event_id, [article_id], llm)
+        except HTTPException:
+            pass
+        except Exception as e:
+            logger.error(f"Auto-summary after manual add failed: {e}", exc_info=True)
+
+    return {
+        "message": "Article added to event" if not already_in else "Article already in event",
+        "article_id": article_id,
+        "event_id": event_id,
+        "already_in": already_in,
+        "summary_regenerated": summary_regenerated,
+    }
 
 
 @router.delete("/{event_id}/articles/{article_id}")

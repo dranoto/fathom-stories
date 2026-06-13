@@ -46,15 +46,21 @@
         <div class="reader-source" id="reader-source"></div>
       </div>
       <div class="reader-body" id="reader-body"></div>
-      <div class="reader-footer">
+      <div class="reader-footer" id="reader-footer">
         <a id="reader-original" href="#" target="_blank" rel="noopener" class="btn-link">Open original ↗</a>
         <button id="btn-toggle-read" class="btn-secondary">Mark unread</button>
+      </div>
+      <div class="reader-event-picker" id="reader-event-picker" hidden>
+        <label for="reader-event-select">Move to event:</label>
+        <select id="reader-event-select"></select>
+        <button id="btn-confirm-move" class="btn-secondary">Move</button>
+        <span id="reader-move-status" class="move-status"></span>
       </div>
     </aside>
   </main>
 
   <div class="toast-container" id="toasts"></div>
 
-  <script type="module" src="/static/script.js"></script>
+  <script type="module" src="/static/script.js?v=2"></script>
 </body>
 </html>

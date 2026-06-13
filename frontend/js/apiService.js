@@ -55,6 +55,10 @@ export async function listUngroupedArticles() {
   return handleFetch(`/api/articles?ungrouped=true&limit=200`);
 }
 
+export async function assignArticleToEvent(eventId, articleId) {
+  return handleFetch(`/api/events/${eventId}/articles/${articleId}`, { method: "POST" });
+}
+
 export async function stats() {
   return handleFetch(`/api/events/_stats/all`);
 }

@@ -71,6 +71,29 @@
   gap: 8px;
 }
 
+.reader-event-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+}
+.reader-event-picker label {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.reader-event-picker select {
+  flex: 1;
+  min-width: 0;
+}
+.reader-event-picker .move-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .toast-container {
   position: fixed;
   bottom: 20px;

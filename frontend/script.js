@@ -143,6 +143,13 @@ async function bootstrap() {
   }, REFRESH_MS);
   setInterval(refreshStats, 60000);
 
+  window.addEventListener("article-moved", async () => {
+    await refreshEvents();
+    await refreshInboxCounts();
+    await refreshReadIds();
+    await refreshStats();
+  });
+
   await refreshReadIds();
   await refreshInboxCounts();
   await refreshEvents();

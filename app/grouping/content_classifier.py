@@ -1,6 +1,6 @@
 # app/grouping/content_classifier.py
 import re
-from typing import List, Tuple
+from typing import List, Optional
 
 
 PODCAST_PATTERNS: List[str] = [
@@ -21,6 +21,9 @@ PODCAST_PATTERNS: List[str] = [
     r"^the sports journalist",
     r"^jomboy on",
     r"^on .+ podcast$",
+    r"listen and subscribe[: ]?",
+    r"apple \| spotify \| wherever you listen",
+    r"^the episode:",
 ]
 
 OPINION_PATTERNS: List[str] = [
@@ -39,18 +42,24 @@ REVIEW_PATTERNS: List[str] = [
     r" rating$",
     r"^grade:",
     r"^the .+ review$",
+    r"^.+ review: ",
+    r"^after thorough test",
+    r" review:?$",
 ]
 
 ADVICE_PATTERNS: List[str] = [
     r"^how to",
     r"^what to (watch|read|cook|buy|stream|do|see|know)",
     r"^a guide to",
-    r"^best .+ of \d{4}$",
+    r"^best .+ of \d{4}",
     r"^the best .+ of",
+    r"^\d+ best .+",
     r"^our editors recommend",
     r"^recommend(ed|ation)?[: ]",
     r"^leave your .+ open$",
     r"^why .+ won'?t solve",
+    r"\d+ best .+ \(\d{4}\)",
+    r"best .+ of \d{4}\)?$",
 ]
 
 NEWSLETTER_PATTERNS: List[str] = [
@@ -72,12 +81,25 @@ LIFESTYLE_PATTERNS: List[str] = [
     r"^home ",
     r"^the women who",
     r"^the whimsy",
+    r"^are .+ too old\?$",
+    r"^here's how .+ can",
+]
+
+PRIVACY_BANNER_PATTERNS: List[str] = [
+    r"this website uses essential cookies",
+    r"cookies? allow us to count visits",
+    r"these cookies may be set through our site by our advertising partners",
+    r"we use audience measurement cookies",
+    r"consent management platform",
+    r"gdpr countries",
 ]
 
 
-def _matches_any(title: str, patterns: List[str]) -> bool:
+def _matches_any(text: str, patterns: List[str]) -> bool:
+    if not text:
+        return False
     for p in patterns:
-        if re.search(p, title, re.IGNORECASE):
+        if re.search(p, text, re.IGNORECASE):
             return True
     return False
 
@@ -101,7 +123,27 @@ def classify_title(title: str) -> str:
     return "news"
 
 
-NON_EVENT_TYPES = {"podcast", "opinion", "review", "advice", "newsletter", "lifestyle"}
+def classify_article(title: str, rss_description: Optional[str] = None, scraped_text: Optional[str] = None) -> str:
+    from_title = classify_title(title)
+    if from_title != "news":
+        return from_title
+    haystack = " ".join(filter(None, [rss_description or "", (scraped_text or "")[:500]]))
+    if not haystack:
+        return "news"
+    if _matches_any(haystack, PRIVACY_BANNER_PATTERNS):
+        return "cookie-banner"
+    if _matches_any(haystack, PODCAST_PATTERNS):
+        return "podcast"
+    if _matches_any(haystack, REVIEW_PATTERNS):
+        return "review"
+    if _matches_any(haystack, ADVICE_PATTERNS):
+        return "advice"
+    if _matches_any(haystack, LIFESTYLE_PATTERNS):
+        return "lifestyle"
+    return "news"
+
+
+NON_EVENT_TYPES = {"podcast", "opinion", "review", "advice", "newsletter", "lifestyle", "cookie-banner"}
 
 
 def is_non_event(title: str) -> bool:

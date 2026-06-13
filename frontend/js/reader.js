@@ -1,5 +1,5 @@
 // frontend/js/reader.js
-import { getArticle, getEvent, markRead, markUnread, generateEventSummary } from "./apiService.js";
+import { getArticle, getEvent, listEvents, markRead, markUnread, generateEventSummary, assignArticleToEvent } from "./apiService.js";
 import { isRead, markRead as stateMarkRead, markUnread as stateMarkUnread } from "./state.js";
 
 let currentArticle = null;
@@ -75,6 +75,8 @@ async function openArticle(id) {
   `;
   toggle.textContent = isRead(article.id) ? "Mark unread" : "Mark read";
 
+  await renderEventPicker(article);
+
   if (!isRead(article.id)) {
     try {
       await markRead(article.id);
@@ -88,6 +90,53 @@ async function openArticle(id) {
   }
 }
 
+async function renderEventPicker(article) {
+  const picker = document.getElementById("reader-event-picker");
+  const select = document.getElementById("reader-event-select");
+  const status = document.getElementById("reader-move-status");
+  if (!article.event_id) {
+    picker.hidden = false;
+    select.innerHTML = `<option value="">— select event —</option>`;
+    try {
+      const events = await listEvents({ minArticles: 1 });
+      for (const ev of events) {
+        select.innerHTML += `<option value="${ev.id}">${escapeHtml(ev.name)} (${ev.article_count})</option>`;
+      }
+    } catch (e) { /* ignore */ }
+    status.textContent = "";
+    document.getElementById("btn-confirm-move").onclick = async () => {
+      const evId = parseInt(select.value, 10);
+      if (!evId) {
+        status.textContent = "Pick an event first.";
+        return;
+      }
+      const btn = document.getElementById("btn-confirm-move");
+      const orig = btn.textContent;
+      btn.disabled = true;
+      status.textContent = "Moving…";
+      try {
+        const res = await assignArticleToEvent(evId, article.id);
+        if (res.already_in) {
+          status.textContent = "Already in that event.";
+        } else {
+          status.textContent = res.summary_regenerated
+            ? "Moved · summary regenerated ✓"
+            : "Moved · (summary regen failed, will retry next regroup)";
+          window.dispatchEvent(new CustomEvent("article-moved", { detail: { articleId: article.id, eventId: evId } }));
+        }
+        btn.textContent = "Done ✓";
+      } catch (e) {
+        status.textContent = "Error: " + e.message;
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    };
+  } else {
+    picker.hidden = true;
+    status.textContent = "";
+  }
+}
+
 function closeReader() {
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
@@ -96,6 +145,8 @@ function closeReader() {
   currentArticle = null;
   currentSummary = null;
   currentEventId = null;
+  const picker = document.getElementById("reader-event-picker");
+  if (picker) picker.hidden = true;
 }
 
 async function openSummary(eventId) {
@@ -125,6 +176,8 @@ async function openSummary(eventId) {
   source.textContent = `${event.name} · Event Summary`;
   orig.href = "#";
   orig.style.display = "none";
+  const picker = document.getElementById("reader-event-picker");
+  if (picker) picker.hidden = true;
 
   if (!summary) {
     body.innerHTML = `

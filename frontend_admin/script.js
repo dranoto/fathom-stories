@@ -4,6 +4,7 @@ import { renderEventList } from "./js/eventList.js";
 import { renderUngrouped } from "./js/articleSearch.js";
 import { renderProposals } from "./js/reclusterPanel.js";
 import { renderFeedback } from "./js/feedback.js";
+import { loadTheme, setupThemeButton } from "./js/theme.js";
 
 const REFRESH_MS = 15000;
 
@@ -48,6 +49,8 @@ function toast(text, kind = "") {
 }
 
 async function bootstrap() {
+  loadTheme();
+  setupThemeButton();
   document.querySelectorAll(".atab").forEach(t => {
     t.addEventListener("click", () => showTab(t.dataset.tab));
   });

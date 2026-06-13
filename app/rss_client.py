@@ -277,6 +277,19 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
             )
             continue
 
+        from .grouping.content_classifier import classify_article
+        content_type = classify_article(
+            title=article_title or "",
+            rss_description=plain_text_description or "",
+            scraped_text=text_content_to_save or "",
+        )
+        from .grouping.content_classifier import NON_EVENT_TYPES
+        if content_type in NON_EVENT_TYPES:
+            logger.info(
+                f"RSS_CLIENT: dropping {article_url} — content_type={content_type} (non-event)"
+            )
+            continue
+
         serializable_entry = _make_entry_serializable(feed_entry_data)
 
         new_article = Article(
