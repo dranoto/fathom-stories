@@ -150,6 +150,18 @@ async function bootstrap() {
     await refreshStats();
   });
 
+  window.addEventListener("article-removed", async (e) => {
+    await refreshEvents();
+    await refreshInboxCounts();
+    await refreshReadIds();
+    await refreshStats();
+    const detail = e && e.detail;
+    if (detail && detail.eventId) {
+      const stillOpen = document.querySelector(`.event-tab[data-event-id="${detail.eventId}"]`);
+      if (!stillOpen) return;
+    }
+  });
+
   await refreshReadIds();
   await refreshInboxCounts();
   await refreshEvents();

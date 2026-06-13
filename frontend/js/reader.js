@@ -1,5 +1,5 @@
 // frontend/js/reader.js
-import { getArticle, getEvent, listEvents, markRead, markUnread, generateEventSummary, assignArticleToEvent } from "./apiService.js";
+import { getArticle, getEvent, listEvents, markRead, markUnread, generateEventSummary, assignArticleToEvent, removeArticleFromEvent } from "./apiService.js";
 import { isRead, markRead as stateMarkRead, markUnread as stateMarkUnread } from "./state.js";
 
 let currentArticle = null;
@@ -51,6 +51,10 @@ async function openArticle(id) {
 
   body.innerHTML = `<div class="pane-empty">Loading…</div>`;
   pane.hidden = false;
+  const picker = document.getElementById("reader-event-picker");
+  if (picker) picker.hidden = true;
+  const removeBtn = document.getElementById("btn-remove-from-event");
+  if (removeBtn) removeBtn.hidden = true;
   main.classList.add("has-reader");
 
   let article;
@@ -74,6 +78,7 @@ async function openArticle(id) {
     <div class="reader-content">${html}</div>
   `;
   toggle.textContent = isRead(article.id) ? "Mark unread" : "Mark read";
+  setupRemoveButton(article);
 
   await renderEventPicker(article);
 
@@ -137,6 +142,38 @@ async function renderEventPicker(article) {
   }
 }
 
+function setupRemoveButton(article) {
+  const btn = document.getElementById("btn-remove-from-event");
+  if (!btn) return;
+  if (!article.event_id) {
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  btn.onclick = async () => {
+    if (!confirm("Remove this article from the event?\nIf the event would have fewer than 2 articles, the event will be disbanded.")) return;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Removing…";
+    try {
+      const res = await removeArticleFromEvent(article.event_id, article.id);
+      btn.textContent = "Done ✓";
+      window.dispatchEvent(new CustomEvent("article-removed", {
+        detail: {
+          articleId: article.id,
+          eventId: article.event_id,
+          disbanded: !!res.disbanded,
+        },
+      }));
+      setTimeout(() => closeReader(), 600);
+    } catch (e) {
+      alert("Failed: " + e.message);
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  };
+}
+
 function closeReader() {
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
@@ -147,6 +184,11 @@ function closeReader() {
   currentEventId = null;
   const picker = document.getElementById("reader-event-picker");
   if (picker) picker.hidden = true;
+  const removeBtn = document.getElementById("btn-remove-from-event");
+  if (removeBtn) {
+    removeBtn.hidden = true;
+    removeBtn.disabled = false;
+  }
 }
 
 async function openSummary(eventId) {
@@ -160,6 +202,8 @@ async function openSummary(eventId) {
   body.innerHTML = `<div class="pane-empty">Loading summary…</div>`;
   pane.hidden = false;
   main.classList.add("has-reader");
+  const removeBtn = document.getElementById("btn-remove-from-event");
+  if (removeBtn) removeBtn.hidden = true;
   currentArticle = null;
   currentEventId = eventId;
 

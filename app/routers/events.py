@@ -292,7 +292,7 @@ async def remove_article_from_event(
     article_id: int,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
-    verify_event_exists(db, event_id)
+    event = verify_event_exists(db, event_id)
     article = db.query(Article).filter(Article.id == article_id, Article.event_id == event_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not in event")
@@ -302,15 +302,33 @@ async def remove_article_from_event(
         original_event_id=event_id,
         corrected_event_id=None,
     )
+    remaining_articles = db.query(Article).filter(
+        Article.event_id == event_id, Article.id != article_id
+    ).all()
+    disbanded = False
+    if len(remaining_articles) < 2:
+        disbanded = True
+        for a in remaining_articles:
+            a.event_id = None
+            a.grouped_at = datetime.now(timezone.utc)
+            a.proposed_event_name = None
+        db.query(EventSummary).filter(EventSummary.event_id == event_id).delete(synchronize_session=False)
+        db.delete(event)
     article.event_id = None
     article.grouped_at = datetime.now(timezone.utc)
+    article.proposed_event_name = None
     try:
         db.commit()
     except Exception as e:
         db.rollback()
         logger.error(f"Error removing article from event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to remove article")
-    return {"message": "Article removed from event"}
+    return {
+        "message": "Article removed" + (" and event disbanded" if disbanded else ""),
+        "disbanded": disbanded,
+        "article_id": article_id,
+        "event_id": event_id,
+    }
 
 
 @router.post("/{event_id}/summary", response_model=EventSummaryResponse)
