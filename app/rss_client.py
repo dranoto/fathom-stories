@@ -224,16 +224,21 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
         # Prepare content for DB
         text_content_to_save = scraped_doc.page_content
         html_content_to_save = scraped_doc.metadata.get('full_html_content')
-        
-        scraper_error = scraped_doc.metadata.get('error')
-        if scraper_error:
-            logger.warning(f"RSS_CLIENT: Scraping for {article_url} resulted in error: {scraper_error}. Saving article with error info.")
-            # Decide how to save: save with null content, or save error in content fields?
-            # For now, save None if there was an error, summary/tagging will handle it.
-            text_content_to_save = f"Scraping Error: {scraper_error}" # Or None
-            html_content_to_save = None # No reliable HTML if scraping failed badly
 
+        scraper_error = scraped_doc.metadata.get('error')
         word_count_to_save = scraped_doc.metadata.get('word_count', 0)
+
+        if scraper_error:
+            logger.warning(
+                f"RSS_CLIENT: dropping {article_url} — scraper error: {scraper_error}"
+            )
+            continue
+        if (word_count_to_save or 0) < app_config.MIN_ARTICLE_WORD_COUNT:
+            logger.info(
+                f"RSS_CLIENT: dropping {article_url} — {word_count_to_save} words "
+                f"(< {app_config.MIN_ARTICLE_WORD_COUNT} threshold)"
+            )
+            continue
 
         serializable_entry = _make_entry_serializable(feed_entry_data)
 

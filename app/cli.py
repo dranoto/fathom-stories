@@ -69,6 +69,20 @@ def cmd_fetch(_args):
     asyncio.run(runner())
 
 
+def cmd_cleanup_bad(_args):
+    from sqlalchemy import or_
+    from .database.models import Article
+    create_db_and_tables()
+    with db_session_scope() as db:
+        q = db.query(Article).filter(or_(
+            Article.scraped_text_content.like("Scraping Error:%"),
+            Article.word_count < app_config.MIN_ARTICLE_WORD_COUNT,
+        ))
+        ids = [a.id for a in q.all()]
+        n = q.delete(synchronize_session=False)
+    print(f"Deleted {n} bad articles (scraping errors or < {app_config.MIN_ARTICLE_WORD_COUNT} words)")
+
+
 def cmd_group(_args):
     create_db_and_tables()
     llm = _get_grouping_llm()
@@ -224,6 +238,7 @@ def main():
 
     sub.add_parser("init-db", help="Create database tables").set_defaults(func=cmd_init_db)
     sub.add_parser("seed-feeds", help="Add feeds from .env RSS_FEED_URLS").set_defaults(func=cmd_seed_feeds)
+    sub.add_parser("cleanup-bad", help="Delete articles with scraping errors or below MIN_ARTICLE_WORD_COUNT").set_defaults(func=cmd_cleanup_bad)
     sub.add_parser("fetch", help="One-shot RSS fetch + scrape").set_defaults(func=cmd_fetch)
     sub.add_parser("group", help="One-shot live grouping").set_defaults(func=cmd_group)
     sub.add_parser("regroup", help="One-shot forced regroup of ungrouped articles (creates events when 2+ match)").set_defaults(func=cmd_regroup)

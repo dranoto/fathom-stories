@@ -100,6 +100,7 @@ else:
 USE_HEADLESS_BROWSER = os.getenv("USE_HEADLESS_BROWSER", "True").lower() in ('true', '1', 't')
 
 DEFAULT_MINIMUM_WORD_COUNT = int(os.getenv("DEFAULT_MINIMUM_WORD_COUNT", "100"))
+MIN_ARTICLE_WORD_COUNT = int(os.getenv("MIN_ARTICLE_WORD_COUNT", "350"))
 
 # --- LLM Temperature Configuration ---
 SUMMARY_LLM_TEMPERATURE = float(os.getenv("SUMMARY_LLM_TEMPERATURE", "0.2"))

@@ -40,6 +40,7 @@ python -m app.cli admin
 |---------|---------|
 | `python -m app.cli init-db` | Create tables |
 | `python -m app.cli seed-feeds` | Add feeds from `RSS_FEED_URLS` |
+| `python -m app.cli cleanup-bad` | Delete articles with scraping errors or below `MIN_ARTICLE_WORD_COUNT` |
 | `python -m app.cli fetch` | One-shot RSS fetch + scrape |
 | `python -m app.cli group` | One-shot live grouping (existing events only, no new events) |
 | `python -m app.cli regroup` | One-shot forced regroup (creates new events when 2+ ungrouped match) |
