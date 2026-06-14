@@ -271,10 +271,8 @@ async function openSummary(eventId) {
     <h1>${escapeHtml(event.name)} — Event Summary</h1>
     <div class="reader-meta">v${summary.article_count || 0} articles · ${formatDate(summary.generated_at)}</div>
     <div class="reader-content">
-      <h2>Timeline narrative</h2>
-      <p>${escapeHtml(summary.timeline_narrative || "(none)")}</p>
-      <h2>Cross-source synthesis</h2>
-      <p>${escapeHtml(summary.cross_source_synthesis || "(none)")}</p>
+      ${renderTimelineNarrative(summary.timeline_narrative)}
+      ${renderCrossSourceSynthesis(summary.cross_source_synthesis)}
       <h2>Progressive update</h2>
       <p>${escapeHtml(summary.progressive_summary || "(none)")}</p>
       ${summary.key_developments && summary.key_developments.length ? `
@@ -308,6 +306,37 @@ function formatDate(d) {
   if (!d) return "";
   if (typeof d === "string") d = new Date(d);
   return d.toLocaleString();
+}
+
+function renderTimelineNarrative(value) {
+  const heading = `<h2>Timeline narrative</h2>`;
+  if (Array.isArray(value)) {
+    if (!value.length) return heading + `<p>(none)</p>`;
+    const entries = value.map(entry => {
+      const date = entry && entry.date ? `<div class="timeline-date">${escapeHtml(String(entry.date))}</div>` : "";
+      const text = entry && entry.text ? `<p>${escapeHtml(String(entry.text))}</p>` : "";
+      return `<div class="timeline-entry">${date}${text}</div>`;
+    }).join("");
+    return heading + entries;
+  }
+  return heading + `<p>${escapeHtml(value || "(none)")}</p>`;
+}
+
+function renderCrossSourceSynthesis(value) {
+  const heading = `<h2>Cross-source synthesis</h2>`;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const bySource = Array.isArray(value.by_source) ? value.by_source : [];
+    const bySourceHtml = bySource.length
+      ? `<ul class="source-list">${bySource.map(s => {
+          const src = s && s.source ? escapeHtml(String(s.source)) : "Unknown";
+          const obs = s && s.observation ? escapeHtml(String(s.observation)) : "";
+          return `<li class="source-observation"><strong>${src}</strong> — ${obs}</li>`;
+        }).join("")}</ul>`
+      : "";
+    const synth = value.synthesis ? `<p>${escapeHtml(String(value.synthesis))}</p>` : "";
+    return heading + bySourceHtml + synth;
+  }
+  return heading + `<p>${escapeHtml(value || "(none)")}</p>`;
 }
 
 function escapeHtml(s) {

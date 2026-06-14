@@ -1,13 +1,13 @@
 # app/schemas/event.py
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime
 
 
 class EventSummaryData(BaseModel):
-    timeline_narrative: str
-    cross_source_synthesis: str
-    progressive_summary: str
+    timeline_narrative: Optional[Any] = None
+    cross_source_synthesis: Optional[Any] = None
+    progressive_summary: Optional[str] = None
     article_ids: Optional[List[int]] = []
     article_count: Optional[int] = None
     feed_count: Optional[int] = None
