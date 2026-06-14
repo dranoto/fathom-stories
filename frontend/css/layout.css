@@ -161,7 +161,18 @@ body {
   padding: 1px 6px;
   border-radius: 10px;
 }
-.event-tab.active .badge { background: var(--bg-elev); }
+.event-tab .badge .sep { margin: 0 2px; opacity: 0.5; }
+.event-tab .badge-unread {
+  background: var(--accent);
+  color: #0f1419;
+  font-weight: 600;
+}
+.event-tab .badge-read {
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+.event-tab.active .badge-unread { background: #6ee7a0; }
 .event-tab.cooling::after {
   content: "❄";
   font-size: 10px;

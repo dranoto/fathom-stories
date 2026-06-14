@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy import desc, func
 
 from .. import database
-from ..database.models import Event, EventSummary, Article
+from ..database.models import Event, EventSummary, Article, ArticleRead
 from ..schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventDetailResponse,
     ArticleInEvent, EventSummaryResponse, EventSummaryData,
@@ -63,6 +63,16 @@ async def list_events(
         .group_by(Article.event_id)
         .all()
     )
+    read_article_ids_subq = db.query(ArticleRead.article_id).subquery()
+    unread_counts = dict(
+        db.query(Article.event_id, func.count(Article.id))
+        .filter(
+            Article.event_id.in_(event_ids),
+            Article.id.notin_(read_article_ids_subq),
+        )
+        .group_by(Article.event_id)
+        .all()
+    )
 
     result = [
         EventResponse(
@@ -75,6 +85,8 @@ async def list_events(
             archived_at=ev.archived_at,
             summary_version=ev.summary_version or 0,
             article_count=article_counts.get(ev.id, 0),
+            unread_count=unread_counts.get(ev.id, 0),
+            read_count=max(0, article_counts.get(ev.id, 0) - unread_counts.get(ev.id, 0)),
             feed_count=feed_counts.get(ev.id, 0),
             importance_avg=float(importance_avgs.get(ev.id) or 0.0),
         )

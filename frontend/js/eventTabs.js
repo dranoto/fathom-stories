@@ -22,7 +22,13 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
         e.id === activeId && !inboxOpen ? "active" : "",
         e.status === "cooling" ? "cooling" : "",
       ].filter(Boolean).join(" ");
-      const badge = e.article_count > 0 ? `<span class="badge">${e.article_count}</span>` : "";
+      const total = e.article_count || 0;
+      const unread = e.unread_count || 0;
+      const allRead = total > 0 && unread === 0;
+      const badgeCls = allRead ? "badge badge-read" : (unread > 0 ? "badge badge-unread" : "badge");
+      const badge = total > 0
+        ? `<span class="${badgeCls}" title="${unread} unread of ${total}">${unread}<span class="sep">/</span>${total}</span>`
+        : "";
       return `<div class="${cls}" data-event-id="${e.id}">
         <span class="name">${escapeHtml(e.name)}</span>${badge}
       </div>`;

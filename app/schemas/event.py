@@ -39,6 +39,8 @@ class EventResponse(BaseModel):
     archived_at: Optional[datetime] = None
     summary_version: Optional[int] = 0
     article_count: Optional[int] = 0
+    unread_count: Optional[int] = 0
+    read_count: Optional[int] = 0
     feed_count: Optional[int] = 0
     importance_avg: Optional[float] = 0.0
 
