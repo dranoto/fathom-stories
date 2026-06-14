@@ -18,7 +18,6 @@ from . import config as app_config
 from . import database
 from .routers import events as events_router
 from .routers import articles as articles_router
-from .routers import admin as admin_router
 from .routers import grouping as grouping_router
 from . import tasks
 
@@ -127,7 +126,6 @@ app.add_middleware(
 
 app.include_router(events_router.router)
 app.include_router(articles_router.router)
-app.include_router(admin_router.router)
 app.include_router(grouping_router.router)
 
 

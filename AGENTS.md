@@ -28,10 +28,6 @@ python -m app.cli group
 # Run the main app (with scheduler)
 python -m app.cli serve
 # Reader UI: http://localhost:8000
-
-# Run the admin app (separate port)
-python -m app.cli admin
-# Admin UI: http://localhost:8001
 ```
 
 ## CLI Reference
@@ -49,7 +45,6 @@ python -m app.cli admin
 | `python -m app.cli summarize <event_id>` | Generate/regenerate event summary |
 | `python -m app.cli stats` | Show counts |
 | `python -m app.cli serve` | Run main API on `$MAIN_PORT` (default 8000) with scheduler |
-| `python -m app.cli admin` | Run admin API on `$ADMIN_PORT` (default 8001) |
 
 ## Code Style
 
@@ -80,7 +75,6 @@ from .routers import article_routes
 ```
 app/
 ├── main_api.py           # FastAPI entry — reader UI + main API
-├── admin_api.py          # FastAPI entry — admin UI (separate port)
 ├── config.py             # Env config with defaults
 ├── cli.py                # argparse entry points
 ├── dependencies.py       # LLM DI
@@ -91,7 +85,6 @@ app/
 ├── routers/              # FastAPI routers
 │   ├── events.py         # /api/events
 │   ├── articles.py       # /api/articles
-│   ├── admin.py          # /api/admin/proposals
 │   └── grouping.py       # /api/grouping
 ├── grouping/             # LLM event-detection engine
 │   ├── engine.py         # assign_new_articles
@@ -106,7 +99,6 @@ app/
 └── summarizer.py         # LLM init + per-article summary
 
 frontend/                 # Reader UI (port 8000)
-frontend_admin/           # Editor UI (port 8001)
 data/                     # SQLite DB (gitignored)
 scraper_assistant/        # bypass-paywalls extension (gitignored)
 ```
@@ -130,14 +122,14 @@ scraper_assistant/        # bypass-paywalls extension (gitignored)
 **Daily reclusterer** runs at 03:00 UTC:
 - Pulls last-14-days articles + active/cooling/archived (last 30d) events
 - Sends full context to LLM, gets back: merge_candidates, split_candidates, cooling_events, reviving_events, new_events
-- Writes to `recluster_proposals` table (admin approves via UI)
+- Writes to `recluster_proposals` table (currently write-only — no UI reads them; user removed the admin panel)
 - **`revive` happens ONLY in recluster** — live assigner never revives archived events
 
 **Hourly lifecycle**:
 - `active` → `cooling` if `last_article_at` 3-7 days old
 - `active|cooling` → `archived` if `last_article_at` > `AUTO_ARCHIVE_DAYS` (default 7)
 
-**Admin corrections** write `GroupingFeedback` rows. Top 5 most recent are injected into the next LLM call as few-shot examples (the "editor corrections are ground truth" section).
+**Reader-driven corrections** (move-to-event, remove-from-event) write `GroupingFeedback` rows. Top 5 most recent are injected into the next LLM call as few-shot examples (the "editor corrections are ground truth" section).
 
 ## LLM Configuration
 

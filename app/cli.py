@@ -234,16 +234,6 @@ def cmd_serve(args):
     )
 
 
-def cmd_admin(args):
-    create_db_and_tables()
-    uvicorn.run(
-        "app.admin_api:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        log_level="info",
-    )
-
 
 def main():
     parser = argparse.ArgumentParser(prog="fathom-stories", description="CLI for fathom-stories")
@@ -270,11 +260,6 @@ def main():
     p_serve.add_argument("--reload", action="store_true")
     p_serve.set_defaults(func=cmd_serve)
 
-    p_admin = sub.add_parser("admin", help="Run admin frontend/API (separate port)")
-    p_admin.add_argument("--host", default="0.0.0.0")
-    p_admin.add_argument("--port", type=int, default=app_config.ADMIN_PORT)
-    p_admin.add_argument("--reload", action="store_true")
-    p_admin.set_defaults(func=cmd_admin)
 
     args = parser.parse_args()
     args.func(args)

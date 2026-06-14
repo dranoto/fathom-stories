@@ -61,10 +61,6 @@ function renderBody() {
       <span class="item-icon">◐</span>
       <span class="item-text">Toggle light/dark</span>
     </button>
-    <a class="mobile-menu-item" href="http://localhost:8001" target="_blank" rel="noopener">
-      <span class="item-icon">⚙</span>
-      <span class="item-text">Open admin (desktop)</span>
-    </a>
   `;
 
   body.querySelectorAll("button[data-action]").forEach(btn => {
