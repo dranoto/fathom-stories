@@ -128,8 +128,7 @@ def is_debug_level(level_name: str) -> bool:
 
 
 # --- Ports ---
-MAIN_PORT = int(os.getenv("MAIN_PORT", "8000"))
-ADMIN_PORT = int(os.getenv("ADMIN_PORT", "8001"))
+MAIN_PORT = int(os.getenv("MAIN_PORT", "8800"))
 
 
 # --- Default Prompts ---
@@ -353,4 +352,4 @@ logger.info(f"CONFIG: RSS_FEED_URLS count={len(RSS_FEED_URLS)}")
 logger.info(f"CONFIG: PATH_TO_EXTENSION={PATH_TO_EXTENSION}")
 logger.info(f"CONFIG: USE_HEADLESS_BROWSER={USE_HEADLESS_BROWSER}")
 logger.info(f"CONFIG: AUTO_ARCHIVE_DAYS={AUTO_ARCHIVE_DAYS}, RECLUSTER_HOUR_UTC={RECLUSTER_HOUR_UTC}")
-logger.info(f"CONFIG: MAIN_PORT={MAIN_PORT}, ADMIN_PORT={ADMIN_PORT}")
+logger.info(f"CONFIG: MAIN_PORT={MAIN_PORT}")

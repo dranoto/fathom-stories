@@ -34,6 +34,13 @@ def create_db_and_tables() -> None:
                 conn.execute(text("ALTER TABLE articles ADD COLUMN proposed_event_name VARCHAR"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_articles_proposed_event_name ON articles (proposed_event_name)"))
             logger.info("Migrated: added articles.proposed_event_name")
+    if "article_reads" in insp.get_table_names():
+        read_cols = {c["name"] for c in insp.get_columns("article_reads")}
+        if "visitor_id" not in read_cols:
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE article_reads"))
+            Base.metadata.create_all(bind=engine, tables=[ArticleRead.__table__])
+            logger.info("Migrated: dropped & recreated article_reads with visitor_id")
     logger.info("Database tables created/verified.")
 
 

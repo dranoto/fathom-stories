@@ -7,6 +7,7 @@ import uvicorn
 
 from . import config as app_config
 from .database import create_db_and_tables, db_session_scope, FeedSource
+from .database.models import Base
 from .rss_client import update_all_subscribed_feeds, add_or_update_feed_source
 from .summarizer import initialize_llm
 from .grouping import engine as grouping_engine
@@ -40,6 +41,26 @@ def _get_grouping_llm():
 def cmd_init_db(_args):
     create_db_and_tables()
     print(f"Database initialized at {app_config.DATABASE_URL}")
+
+
+def cmd_migrate_visitor_id(_args):
+    from sqlalchemy import inspect, text
+    from .database.models import ArticleRead
+    from .database import engine
+
+    insp = inspect(engine)
+    if "article_reads" not in insp.get_table_names():
+        print("article_reads table does not exist; nothing to migrate.")
+        return
+    cols = {c["name"] for c in insp.get_columns("article_reads")}
+    if "visitor_id" in cols:
+        print("article_reads already has visitor_id column; nothing to do.")
+        return
+    with engine.begin() as conn:
+        existing_count = conn.execute(text("SELECT COUNT(*) FROM article_reads")).scalar() or 0
+        conn.execute(text("DROP TABLE article_reads"))
+    Base.metadata.create_all(bind=engine, tables=[ArticleRead.__table__])
+    print(f"Dropped {existing_count} existing read rows and recreated article_reads with visitor_id.")
 
 
 def cmd_seed_feeds(_args):
@@ -240,6 +261,7 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init-db", help="Create database tables").set_defaults(func=cmd_init_db)
+    sub.add_parser("migrate-visitor-id", help="Drop & recreate article_reads with visitor_id column (per-browser read state)").set_defaults(func=cmd_migrate_visitor_id)
     sub.add_parser("seed-feeds", help="Add feeds from .env RSS_FEED_URLS").set_defaults(func=cmd_seed_feeds)
     sub.add_parser("cleanup-bad", help="Delete articles with scraping errors or below MIN_ARTICLE_WORD_COUNT").set_defaults(func=cmd_cleanup_bad)
     sub.add_parser("fetch", help="One-shot RSS fetch + scrape").set_defaults(func=cmd_fetch)

@@ -37,6 +37,7 @@ python -m app.cli serve
 | `python -m app.cli init-db` | Create tables |
 | `python -m app.cli seed-feeds` | Add feeds from `RSS_FEED_URLS` |
 | `python -m app.cli cleanup-bad` | Delete articles with scraping errors or below `MIN_ARTICLE_WORD_COUNT` |
+| `python -m app.cli migrate-visitor-id` | Drop & recreate `article_reads` with `visitor_id` column (per-browser read state) |
 | `python -m app.cli fetch` | One-shot RSS fetch + scrape |
 | `python -m app.cli group` | One-shot live grouping (existing events only, no new events) |
 | `python -m app.cli regroup` | One-shot forced regroup (creates new events when 2+ ungrouped match) |
@@ -109,7 +110,7 @@ scraper_assistant/        # bypass-paywalls extension (gitignored)
 2. **Logging over print** — Use `logger` from `logging.getLogger(__name__)`.
 3. **Environment config** — All settings via `.env`, never hardcoded.
 4. **Graceful degradation** — LLM failures log error and return meaningful message.
-5. **Single user** — No auth, no `user_id` columns.
+5. **Single user** — No auth, no `user_id` columns. Read state is per-browser via an anonymous `fathom_visitor_id` cookie (uuid4, HttpOnly, 1-year) so the site can be shared with friends without their reads colliding with yours.
 
 ## Grouping Flow
 

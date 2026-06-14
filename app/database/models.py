@@ -133,14 +133,18 @@ class ReclusterProposal(Base):
         return f"<ReclusterProposal(id={self.id}, kind='{self.kind}', applied={self.applied})>"
 
 
+VISITOR_ID_LENGTH = 36
+
+
 class ArticleRead(Base):
     __tablename__ = "article_reads"
 
     article_id = Column(Integer, ForeignKey("articles.id", ondelete='CASCADE'), primary_key=True)
+    visitor_id = Column(String(VISITOR_ID_LENGTH), primary_key=True)
     read_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
 
     def __repr__(self) -> str:
-        return f"<ArticleRead(article_id={self.article_id}, read_at={self.read_at})>"
+        return f"<ArticleRead(article_id={self.article_id}, visitor_id='{self.visitor_id}', read_at={self.read_at})>"
 
 
 class ScrapeFailure(Base):

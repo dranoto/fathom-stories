@@ -15,7 +15,7 @@ from ..schemas.event import (
     MoveArticleRequest, MergeRequest, SplitRequest,
     ReclusterProposalOut, GroupingFeedbackOut, StatsOut,
 )
-from ..dependencies import get_llm_summary
+from ..dependencies import get_llm_summary, get_visitor_id
 from ..security import verify_event_exists
 from ..grouping.feedback import record_correction
 from ..grouping import lifecycle as lifecycle_module
@@ -30,6 +30,7 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 async def list_events(
     status: Optional[str] = Query(None, description="Filter by status: active|cooling|archived"),
     min_articles: int = Query(1, ge=1, description="Only include events with at least this many articles"),
+    visitor_id: str = Depends(get_visitor_id),
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     q = db.query(Event)
@@ -63,7 +64,11 @@ async def list_events(
         .group_by(Article.event_id)
         .all()
     )
-    read_article_ids_subq = db.query(ArticleRead.article_id).subquery()
+    read_article_ids_subq = (
+        db.query(ArticleRead.article_id)
+        .filter(ArticleRead.visitor_id == visitor_id)
+        .subquery()
+    )
     unread_counts = dict(
         db.query(Article.event_id, func.count(Article.id))
         .filter(
@@ -152,6 +157,7 @@ async def search_articles(
 @router.get("/{event_id}", response_model=EventDetailResponse)
 async def get_event(
     event_id: int,
+    visitor_id: str = Depends(get_visitor_id),
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = verify_event_exists(db, event_id)
@@ -161,12 +167,21 @@ async def get_event(
         .order_by(desc(Article.published_date))
         .all()
     )
+    read_ids = {
+        r.article_id
+        for r in db.query(ArticleRead.article_id)
+        .filter(
+            ArticleRead.visitor_id == visitor_id,
+            ArticleRead.article_id.in_([a.id for a in articles]),
+        )
+        .all()
+    }
     article_payloads = [
         ArticleInEvent(
             id=a.id, title=a.title, publisher_name=a.publisher_name,
             published_date=a.published_date, url=a.url, word_count=a.word_count,
             importance_score=a.importance_score, grouping_confidence=a.grouping_confidence,
-            is_read=False,
+            is_read=(a.id in read_ids),
         )
         for a in articles
     ]

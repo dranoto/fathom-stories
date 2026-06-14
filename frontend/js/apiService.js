@@ -1,9 +1,10 @@
 // frontend/js/apiService.js
-const MAIN_API = "";  // same origin
+const MAIN_API = "";
 
 async function handleFetch(url, options = {}) {
   const res = await fetch(MAIN_API + url, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    credentials: "same-origin",
     ...options,
   });
   if (!res.ok) {
@@ -47,8 +48,8 @@ export async function markUnread(id) {
 }
 
 export async function listReadArticleIds() {
-  const articles = await handleFetch(`/api/articles?limit=500`);
-  return new Set(articles.filter(a => a.is_read).map(a => a.id));
+  const ids = await handleFetch(`/api/articles/reads/ids`);
+  return new Set(ids);
 }
 
 export async function listUngroupedArticles() {

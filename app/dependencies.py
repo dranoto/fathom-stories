@@ -18,3 +18,11 @@ def get_llm_grouping(request: Request) -> ChatOpenAI:
         logger.error("Dependency Error: Grouping LLM not found in app.state.")
         raise HTTPException(status_code=503, detail="Grouping LLM has not been initialized.")
     return request.app.state.llm_grouping_instance
+
+
+def get_visitor_id(request: Request) -> str:
+    visitor_id = getattr(request.state, "visitor_id", None)
+    if not visitor_id:
+        logger.error("Dependency Error: visitor_id missing from request.state.")
+        raise HTTPException(status_code=500, detail="Visitor identity not established.")
+    return visitor_id

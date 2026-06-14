@@ -19,6 +19,7 @@ from . import database
 from .routers import events as events_router
 from .routers import articles as articles_router
 from .routers import grouping as grouping_router
+from .middleware.visitor import VisitorCookieMiddleware
 from . import tasks
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(VisitorCookieMiddleware)
 
 app.include_router(events_router.router)
 app.include_router(articles_router.router)
