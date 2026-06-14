@@ -43,6 +43,25 @@ body {
   gap: 6px;
   margin-left: 12px;
   align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  -webkit-overflow-scrolling: touch;
+}
+.header-countdowns::-webkit-scrollbar {
+  height: 6px;
+}
+.header-countdowns::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+.header-countdowns::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+.header-countdowns::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 .countdown-chip {
   display: inline-flex;
