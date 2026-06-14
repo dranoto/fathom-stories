@@ -424,12 +424,25 @@ body {
    Tablet (portrait, 700-1024) - show some desktop features
    ============================================================= */
 @media (min-width: 700px) {
+  .app-header {
+    flex-wrap: nowrap;
+  }
   .app-header .brand .title {
     display: inline;
   }
   .app-header .brand::after { content: none; }
-  .header-status { order: 0; flex-basis: auto; margin-top: 0; }
-  .header-countdowns { display: flex; }
+  .header-status {
+    order: 0;
+    flex-basis: auto;
+    margin-top: 0;
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .header-countdowns {
+    display: flex;
+    flex-shrink: 0;
+  }
   .app-main.has-reader {
     grid-template-columns: 1fr min(60%, 720px);
   }
@@ -466,6 +479,20 @@ body {
    ============================================================= */
 @media (min-width: 1024px) {
   .app-header { padding: 10px 20px; }
+  .event-tabs {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  .event-tabs::-webkit-scrollbar {
+    display: block;
+    height: 6px;
+  }
+  .event-tabs::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+  .event-tabs::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+  .event-tabs::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
   .event-header h1 { font-size: 22px; }
   .timeline { gap: 12px; }
   .timeline::before { left: 80px; }

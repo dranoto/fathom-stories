@@ -43,14 +43,26 @@ async function refreshEvents() {
 
 async function onTabSelect(eventId) {
   setInboxOpen(false);
+  setActiveEventId(eventId);
   renderEventTabs(onTabSelect, onInboxSelect);
+  scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
 }
 
 async function onInboxSelect() {
   setInboxOpen(true);
   renderEventTabs(onTabSelect, onInboxSelect);
+  scrollActiveTabIntoView();
   await renderInboxPane();
+}
+
+function scrollActiveTabIntoView() {
+  requestAnimationFrame(() => {
+    const active = document.querySelector("#event-tabs .event-tab.active");
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    }
+  });
 }
 
 function setStatus(kind, text) {
