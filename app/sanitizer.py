@@ -16,9 +16,9 @@ ALLOWED_TAGS = [
 ]
 
 ALLOWED_ATTRIBUTES = {
-    '*': ['class', 'id', 'style'],
+    '*': ['class', 'id'],
     'a': ['href', 'title', 'target', 'rel'],
-    'img': ['src', 'alt', 'title', 'width', 'height', 'style'],
+    'img': ['src', 'alt', 'title', 'width', 'height'],
     'table': ['summary'],
     'td': ['colspan', 'rowspan', 'align', 'valign'],
     'th': ['colspan', 'rowspan', 'align', 'valign', 'scope'],

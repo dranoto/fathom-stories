@@ -243,7 +243,9 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
 
         # Prepare content for DB
         text_content_to_save = scraped_doc.page_content
-        html_content_to_save = scraped_doc.metadata.get('full_html_content')
+        raw_html_content = scraped_doc.metadata.get('full_html_content')
+        from .sanitizer import sanitize_html_content
+        html_content_to_save = sanitize_html_content(raw_html_content) if raw_html_content else None
 
         scraper_error = scraped_doc.metadata.get('error')
         word_count_to_save = scraped_doc.metadata.get('word_count', 0)

@@ -10,6 +10,7 @@ from sqlalchemy import desc
 from .. import database
 from ..database.models import Article, ArticleRead
 from ..dependencies import get_visitor_id
+from ..sanitizer import sanitize_html_content
 from ..schemas.event import ArticleOut, ArticleDetailOut
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ async def get_article(
         importance_score=article.importance_score, grouping_confidence=article.grouping_confidence,
         event_id=article.event_id, fetched_at=article.fetched_at, is_read=is_read,
         scraped_text_content=article.scraped_text_content,
-        full_html_content=article.full_html_content,
+        full_html_content=sanitize_html_content(article.full_html_content or ""),
         rss_description=article.rss_description,
     )
 
