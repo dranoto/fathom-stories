@@ -1,5 +1,5 @@
 // fathom-stories service worker
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `fathom-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `fathom-runtime-${CACHE_VERSION}`;
 

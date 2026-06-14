@@ -212,19 +212,60 @@ body {
   padding-bottom: 24px;
 }
 .reader-body h1 {
-  font-size: 18px;
-  line-height: 1.3;
-  margin-bottom: 8px;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 12px;
 }
 .reader-body .reader-meta {
-  font-size: 11px;
+  font-size: 13px;
   margin-bottom: 14px;
 }
 .reader-body .reader-content {
   font-size: 16px;
-  line-height: 1.6;
+  line-height: 1.65;
+  max-width: 68ch;
+  margin-left: auto;
+  margin-right: auto;
 }
 .reader-body .reader-content p { margin-bottom: 14px; }
+.reader-body .reader-content h2 { font-size: 1.25em; font-weight: 600; margin-top: 1.6em; margin-bottom: 0.5em; line-height: 1.3; }
+.reader-body .reader-content h3 { font-size: 1.1em; font-weight: 600; margin-top: 1.4em; margin-bottom: 0.4em; line-height: 1.3; }
+.reader-body .reader-content h4 { font-size: 1em; font-weight: 600; margin-top: 1.2em; margin-bottom: 0.3em; }
+.reader-body .reader-content a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1px;
+}
+.reader-body .reader-content a:hover { text-decoration-thickness: 2px; }
+.reader-body .reader-content blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin: 1em 0;
+}
+.reader-body .reader-content pre {
+  overflow-x: auto;
+  padding: 12px;
+  background: var(--bg-elev-2);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 1em 0;
+}
+.reader-body .reader-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.reader-body .reader-content pre code { font-size: inherit; }
+.reader-body .reader-content img,
+.reader-body .reader-content figure { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+.reader-body .reader-content figcaption { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 0.5em; }
+.reader-body .reader-content ul,
+.reader-body .reader-content ol { padding-left: 1.4em; margin-bottom: 14px; }
+.reader-body .reader-content li { margin-bottom: 4px; }
 
 .reader-footer {
   display: flex;
@@ -502,6 +543,6 @@ body {
   .timeline-row.summary-row::before { left: 76px; top: 22px; width: 12px; height: 12px; }
   .bubble.size-lg .bubble-title { font-size: 15px; }
   .bubble.summary-bubble .bubble-title { font-size: 12px; }
-  .reader-body h1 { font-size: 20px; }
-  .reader-body .reader-content { font-size: 14px; line-height: 1.7; }
+  .reader-body h1 { font-size: 32px; }
+  .reader-body .reader-content { font-size: 17px; line-height: 1.7; }
 }
