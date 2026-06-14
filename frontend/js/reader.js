@@ -1,6 +1,13 @@
 // frontend/js/reader.js
 import { getArticle, getEvent, listEvents, markRead, markUnread, generateEventSummary, assignArticleToEvent, removeArticleFromEvent } from "./apiService.js";
-import { isRead, markRead as stateMarkRead, markUnread as stateMarkUnread } from "./state.js";
+import {
+  isRead,
+  markRead as stateMarkRead,
+  markUnread as stateMarkUnread,
+  patchEventUnreadCount,
+  dispatchReadStateChanged,
+  dispatchReaderClosed,
+} from "./state.js";
 
 let currentArticle = null;
 let currentSummary = null;
@@ -31,17 +38,20 @@ export function setupReader() {
       return;
     }
     if (!currentArticle) return;
-    if (isRead(currentArticle.id)) {
-      await markUnread(currentArticle.id);
-      stateMarkUnread(currentArticle.id);
-      toggle.textContent = "Mark read";
-    } else {
+    const nextIsRead = !isRead(currentArticle.id);
+    if (nextIsRead) {
       await markRead(currentArticle.id);
       stateMarkRead(currentArticle.id);
       toggle.textContent = "Mark unread";
+    } else {
+      await markUnread(currentArticle.id);
+      stateMarkUnread(currentArticle.id);
+      toggle.textContent = "Mark read";
     }
     const bubble = document.querySelector(`.bubble[data-article-id="${currentArticle.id}"]`);
-    if (bubble) bubble.classList.toggle("read", isRead(currentArticle.id));
+    if (bubble) bubble.classList.toggle("read", nextIsRead);
+    patchEventUnreadCount(currentArticle.id, currentArticle.event_id, nextIsRead);
+    dispatchReadStateChanged(currentArticle.id, currentArticle.event_id, nextIsRead);
   });
 }
 
@@ -96,6 +106,8 @@ async function openArticle(id) {
     }
     const bubble = document.querySelector(`.bubble[data-article-id="${article.id}"]`);
     if (bubble) bubble.classList.add("read");
+    patchEventUnreadCount(article.id, article.event_id, true);
+    dispatchReadStateChanged(article.id, article.event_id, true);
   }
 }
 
@@ -193,6 +205,7 @@ function closeReader() {
     removeBtn.hidden = true;
     removeBtn.disabled = false;
   }
+  dispatchReaderClosed();
 }
 
 async function openSummary(eventId) {

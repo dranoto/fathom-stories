@@ -187,6 +187,16 @@ async function bootstrap() {
     await refreshStats();
   });
 
+  window.addEventListener("read-state-changed", () => {
+    renderEventTabs(onTabSelect, onInboxSelect);
+  });
+
+  window.addEventListener("reader-closed", async () => {
+    await refreshReadIds();
+    await refreshEvents();
+    await refreshInboxCounts();
+  });
+
   await refreshReadIds();
   await refreshInboxCounts();
   await refreshEvents();
