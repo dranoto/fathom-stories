@@ -1,8 +1,9 @@
 // frontend/js/mobileMenu.js
-import { runFetch, runRegroup, stats } from "./apiService.js";
+import { runFetch, runRegroup, runGrouping, stats } from "./apiService.js";
 import { getInboxCounts, getEvents } from "./state.js";
 import { loadTheme, toggleTheme } from "./theme.js";
 import { getPwaInstallState, installPwa } from "./pwa.js";
+import { clearRuntimeCache } from "./swBridge.js";
 
 let isOpen = false;
 let onRunAfterRefresh = null;
@@ -47,6 +48,10 @@ function renderBody() {
       <span class="item-text">Refresh feeds now</span>
       <span class="item-meta" id="menu-chip-refresh">--:--</span>
     </button>
+    <button class="mobile-menu-item" data-action="hard-refresh">
+      <span class="item-icon">⤓</span>
+      <span class="item-text">Hard refresh (clear cache)</span>
+    </button>
     <button class="mobile-menu-item" data-action="regroup">
       <span class="item-icon">⇆</span>
       <span class="item-text">Regroup now</span>
@@ -70,13 +75,20 @@ function renderBody() {
         try {
           const r = await runFetch();
           if (r && r.new_articles > 0) {
-            try {
-              const { runGrouping } = await import("./apiService.js");
-              await runGrouping();
-            } catch (_) {}
+            try { await runGrouping(); } catch (_) {}
           }
           window.dispatchEvent(new CustomEvent("article-moved"));
         } catch (e) { alert("Refresh failed: " + e.message); }
+      } else if (action === "hard-refresh") {
+        setOpen(false);
+        try {
+          await clearRuntimeCache();
+          const r = await runFetch();
+          if (r && r.new_articles > 0) {
+            try { await runGrouping(); } catch (_) {}
+          }
+          window.dispatchEvent(new CustomEvent("article-moved"));
+        } catch (e) { alert("Hard refresh failed: " + e.message); }
       } else if (action === "regroup") {
         setOpen(false);
         try {

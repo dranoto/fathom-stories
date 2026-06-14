@@ -3,7 +3,7 @@ import {
   listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles,
 } from "./js/apiService.js";
 import {
-  setEvents, setActiveEventId, setReadIds, getActiveEventId,
+  setEvents, getEvents, setActiveEventId, setReadIds, getActiveEventId,
   setInboxOpen, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
 import { renderEventTabs } from "./js/eventTabs.js";
@@ -13,6 +13,7 @@ import { loadTheme, setupThemeButton } from "./js/theme.js";
 import { startCountdowns } from "./js/countdowns.js";
 import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
 import { registerServiceWorker } from "./js/pwa.js";
+import { setupSwipeNav } from "./js/swipeNav.js";
 
 async function refreshEvents() {
   let all = [];
@@ -111,12 +112,50 @@ async function afterTimerFiredRegroup() {
   await refreshStats();
 }
 
+async function handleSwipeNav(direction) {
+  const events = getEvents() || [];
+  const allTabs = [...events.map(e => ({ kind: "event", id: e.id })), { kind: "inbox" }];
+  if (allTabs.length < 2) return;
+  const currentEventId = getActiveEventId();
+  const inboxOpen = getInboxOpen();
+  let currentIdx;
+  if (inboxOpen) {
+    currentIdx = allTabs.length - 1;
+  } else if (currentEventId) {
+    currentIdx = allTabs.findIndex(t => t.kind === "event" && t.id === currentEventId);
+    if (currentIdx < 0) currentIdx = 0;
+  } else {
+    currentIdx = 0;
+  }
+  let nextIdx;
+  if (direction === "next") {
+    nextIdx = (currentIdx + 1) % allTabs.length;
+  } else {
+    nextIdx = (currentIdx - 1 + allTabs.length) % allTabs.length;
+  }
+  const target = allTabs[nextIdx];
+  if (target.kind === "inbox") {
+    onInboxSelect();
+  } else {
+    onTabSelect(target.id);
+  }
+}
+
 async function bootstrap() {
   loadTheme();
   setupThemeButton();
   setupReader();
   setupMobileMenu(() => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
   registerServiceWorker();
+
+  const main = document.querySelector(".app-main");
+  setupSwipeNav(main);
+  window.addEventListener("swipe-nav", (e) => {
+    const direction = e.detail && e.detail.direction;
+    if (!direction) return;
+    handleSwipeNav(direction);
+  });
+
   await startCountdowns({
     onRefreshComplete: afterTimerFiredRefresh,
     onRegroupComplete: afterTimerFiredRegroup,

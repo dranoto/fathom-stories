@@ -1,5 +1,5 @@
 // fathom-stories service worker
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = `fathom-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `fathom-runtime-${CACHE_VERSION}`;
 
@@ -95,3 +95,16 @@ async function fetchAndUpdate(req, cache) {
     if (resp.ok) cache.put(req, resp.clone());
   } catch (e) { /* offline */ }
 }
+
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === 'CLEAR_RUNTIME_CACHE') {
+    event.waitUntil(
+      caches.delete(RUNTIME_CACHE).then(() => {
+        if (event.source && event.source.postMessage) {
+          event.source.postMessage({ type: 'RUNTIME_CACHE_CLEARED' });
+        }
+      })
+    );
+  }
+});
