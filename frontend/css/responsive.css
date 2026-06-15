@@ -578,3 +578,69 @@ body {
   .reader-body h1 { font-size: 32px; }
   .reader-body .reader-content { font-size: 17px; line-height: 1.7; }
 }
+
+.desktop-menu-panel {
+  position: fixed;
+  top: 56px;
+  right: 12px;
+  width: 320px;
+  max-height: calc(100vh - 70px);
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  padding: 4px 0;
+}
+.desktop-menu-panel[hidden] { display: none; }
+
+.menu-section {
+  padding: 8px 0;
+}
+.menu-section + .menu-section {
+  border-top: 1px solid var(--border);
+}
+.menu-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 6px;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.menu-section-title {
+  font-weight: 600;
+}
+.menu-section-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.menu-section-action:hover {
+  background: var(--bg-elev-2);
+}
+.menu-section-body {
+  display: flex;
+  flex-direction: column;
+}
+.menu-section-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 8px 18px;
+}
+.menu-stats {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 4px 18px 6px;
+}
+
+@media (max-width: 640px) {
+  .desktop-menu-panel { display: none !important; }
+}

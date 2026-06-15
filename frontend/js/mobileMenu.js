@@ -4,28 +4,23 @@ import { getInboxCounts, getEvents } from "./state.js";
 import { loadTheme, toggleTheme } from "./theme.js";
 import { getPwaInstallState, installPwa } from "./pwa.js";
 import { clearRuntimeCache } from "./swBridge.js";
+import { escapeHtml } from "./eventTabs.js";
 
 let isOpen = false;
 let onRunAfterRefresh = null;
 let cachedStats = null;
+let panelEl = null;
 
 async function refreshCachedStats() {
   try { cachedStats = await stats(); } catch (_) { cachedStats = null; }
 }
 
-function setOpen(open) {
-  isOpen = open;
-  const menu = document.getElementById("mobile-menu");
-  if (!menu) return;
-  menu.hidden = !open;
-  if (open) renderBody();
+function isMobileWidth() {
+  return window.matchMedia("(max-width: 640px)").matches;
 }
 
-function renderBody() {
-  const body = document.getElementById("mobile-menu-body");
-  if (!body) return;
+function buildMenuBody() {
   const inbox = getInboxCounts();
-  const events = getEvents() || [];
   const totalArticles = cachedStats ? cachedStats.articles_total : "—";
   const active = cachedStats ? cachedStats.events_active : "—";
   const cooling = cachedStats && cachedStats.events_cooling > 0 ? ` · ${cachedStats.events_cooling} cooling` : "";
@@ -33,41 +28,105 @@ function renderBody() {
 
   const pwa = getPwaInstallState();
   const installBtn = pwa.canInstall
-    ? `<button class="mobile-menu-install" data-action="install">
+    ? `<button class="mobile-menu-item" data-action="install">
          <span class="item-icon">⬇</span>
          <span class="item-text">Install app</span>
        </button>`
     : "";
 
-  body.innerHTML = `
-    <div style="padding: 8px 18px; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;">Status</div>
-    <div style="padding: 4px 18px 12px; color: var(--text-dim); font-size: 12px;">${escapeHtml(statsLine)}</div>
-    ${installBtn}
-    <button class="mobile-menu-item" data-action="refresh">
-      <span class="item-icon">↻</span>
-      <span class="item-text">Refresh feeds now</span>
-      <span class="item-meta" id="menu-chip-refresh">--:--</span>
-    </button>
-    <button class="mobile-menu-item" data-action="hard-refresh">
-      <span class="item-icon">⤓</span>
-      <span class="item-text">Hard refresh (clear cache)</span>
-    </button>
-    <button class="mobile-menu-item" data-action="regroup">
-      <span class="item-icon">⇆</span>
-      <span class="item-text">Regroup now</span>
-      <span class="item-meta" id="menu-chip-regroup">--:--</span>
-    </button>
-    <button class="mobile-menu-item" data-action="theme">
-      <span class="item-icon">◐</span>
-      <span class="item-text">Toggle light/dark</span>
-    </button>
+  return `
+    <div class="menu-section">
+      <div class="menu-section-header">
+        <span class="menu-section-title">Status</span>
+      </div>
+      <div class="menu-section-body">
+        <div class="menu-stats">${escapeHtml(statsLine)}</div>
+      </div>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-header">
+        <span class="menu-section-title">Actions</span>
+      </div>
+      <div class="menu-section-body">
+        ${installBtn}
+        <button class="mobile-menu-item" data-action="refresh">
+          <span class="item-icon">↻</span>
+          <span class="item-text">Refresh feeds now</span>
+        </button>
+        <button class="mobile-menu-item" data-action="hard-refresh">
+          <span class="item-icon">⤓</span>
+          <span class="item-text">Hard refresh (clear cache)</span>
+        </button>
+        <button class="mobile-menu-item" data-action="regroup">
+          <span class="item-icon">⇆</span>
+          <span class="item-text">Regroup now</span>
+        </button>
+        <button class="mobile-menu-item" data-action="theme">
+          <span class="item-icon">◐</span>
+          <span class="item-text">Toggle light/dark</span>
+        </button>
+      </div>
+    </div>
   `;
+}
 
-  body.querySelectorAll("button[data-action]").forEach(btn => {
+function openMenu() {
+  isOpen = true;
+  if (isMobileWidth()) {
+    const sheet = document.getElementById("mobile-menu");
+    if (sheet) sheet.hidden = false;
+    renderSheetBody();
+  } else {
+    ensureDesktopPanel();
+    if (panelEl) {
+      panelEl.hidden = false;
+      renderPanelBody();
+    }
+  }
+}
+
+function closeMenu() {
+  isOpen = false;
+  const sheet = document.getElementById("mobile-menu");
+  if (sheet) sheet.hidden = true;
+  if (panelEl) panelEl.hidden = true;
+}
+
+function renderSheetBody() {
+  const body = document.getElementById("mobile-menu-body");
+  if (!body) return;
+  body.innerHTML = buildMenuBody();
+  wireActions(body);
+}
+
+function ensureDesktopPanel() {
+  if (panelEl && document.body.contains(panelEl)) return;
+  panelEl = document.createElement("div");
+  panelEl.id = "desktop-menu-panel";
+  panelEl.className = "desktop-menu-panel";
+  panelEl.hidden = true;
+  document.body.appendChild(panelEl);
+  document.addEventListener("click", (e) => {
+    if (!isOpen) return;
+    if (panelEl.contains(e.target)) return;
+    const btn = document.getElementById("btn-menu");
+    if (btn && btn.contains(e.target)) return;
+    closeMenu();
+  });
+}
+
+function renderPanelBody() {
+  if (!panelEl) return;
+  panelEl.innerHTML = buildMenuBody();
+  wireActions(panelEl);
+}
+
+function wireActions(root) {
+  root.querySelectorAll("button[data-action]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
       if (action === "refresh") {
-        setOpen(false);
+        closeMenu();
         try {
           const r = await runFetch();
           if (r && r.new_articles > 0) {
@@ -76,7 +135,7 @@ function renderBody() {
           window.dispatchEvent(new CustomEvent("article-moved"));
         } catch (e) { alert("Refresh failed: " + e.message); }
       } else if (action === "hard-refresh") {
-        setOpen(false);
+        closeMenu();
         try {
           await clearRuntimeCache();
           const r = await runFetch();
@@ -86,14 +145,14 @@ function renderBody() {
           window.dispatchEvent(new CustomEvent("article-moved"));
         } catch (e) { alert("Hard refresh failed: " + e.message); }
       } else if (action === "regroup") {
-        setOpen(false);
+        closeMenu();
         try {
           await runRegroup();
           window.dispatchEvent(new CustomEvent("article-moved"));
         } catch (e) { alert("Regroup failed: " + e.message); }
       } else if (action === "theme") {
         toggleTheme();
-        setOpen(false);
+        closeMenu();
       } else if (action === "install") {
         installPwa();
       }
@@ -101,30 +160,31 @@ function renderBody() {
   });
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
 export function setupMobileMenu(onAfterRefresh) {
   onRunAfterRefresh = onAfterRefresh;
   const btn = document.getElementById("btn-menu");
   const close = document.getElementById("btn-menu-close");
   const backdrop = document.getElementById("mobile-menu-backdrop");
-  if (btn) btn.addEventListener("click", () => {
-    refreshCachedStats();
-    setOpen(true);
+  if (btn) btn.addEventListener("click", async () => {
+    await refreshCachedStats();
+    openMenu();
   });
-  if (close) close.addEventListener("click", () => setOpen(false));
-  if (backdrop) backdrop.addEventListener("click", () => setOpen(false));
+  if (close) close.addEventListener("click", () => closeMenu());
+  if (backdrop) backdrop.addEventListener("click", () => closeMenu());
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isOpen) setOpen(false);
+    if (e.key === "Escape" && isOpen) closeMenu();
   });
   document.addEventListener("mobile-menu-refresh-chips", () => {
-    if (isOpen) renderBody();
+    if (!isOpen) return;
+    if (isMobileWidth()) renderSheetBody();
+    else renderPanelBody();
   });
 }
 
-export async function renderMobileMenu({ onRunAfterRefresh: _cb } = {}) {
+export async function renderMobileMenu() {
   await refreshCachedStats();
-  if (isOpen) renderBody();
+  if (isOpen) {
+    if (isMobileWidth()) renderSheetBody();
+    else renderPanelBody();
+  }
 }

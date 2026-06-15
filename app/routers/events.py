@@ -147,11 +147,13 @@ async def create_event(
 async def search_articles(
     keyword: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100),
+    visitor_id: str = Depends(get_visitor_id),
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     search_term = f"%{keyword}%"
     articles = (
         db.query(Article)
+        .outerjoin(Event, Article.event_id == Event.id)
         .filter(
             (Article.title.ilike(search_term)) | (Article.rss_description.ilike(search_term))
         )
@@ -159,11 +161,20 @@ async def search_articles(
         .limit(limit)
         .all()
     )
+    read_ids = {
+        r.article_id
+        for r in db.query(ArticleRead.article_id)
+        .filter(ArticleRead.visitor_id == visitor_id)
+        .all()
+    }
     return [
         ArticleInEvent(
             id=a.id, title=a.title, publisher_name=a.publisher_name,
             published_date=a.published_date, url=a.url, word_count=a.word_count,
             importance_score=a.importance_score, grouping_confidence=a.grouping_confidence,
+            is_read=(a.id in read_ids),
+            event_id=a.event_id,
+            event_name=a.event.name if a.event else None,
         )
         for a in articles
     ]

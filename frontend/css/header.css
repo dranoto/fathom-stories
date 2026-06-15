@@ -1,1 +1,109 @@
 .app-header { /* placeholder for any header-specific overrides */ }
+
+.header-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.header-search input[type="search"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  width: 180px;
+  outline: none;
+  transition: width 0.15s ease-out, border-color 0.15s ease-out;
+}
+.header-search input[type="search"]:focus {
+  width: 280px;
+  border-color: var(--accent);
+}
+.header-search input[type="search"]::placeholder {
+  color: var(--text-dim);
+}
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 200;
+  padding: 4px;
+}
+.search-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 14px 12px;
+  text-align: center;
+}
+.search-result {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s ease-out;
+}
+.search-result:hover {
+  background: var(--bg-elev-2);
+}
+.search-result-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  margin-bottom: 4px;
+}
+.search-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.search-result-event {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-inbox {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.search-result-read .search-result-title {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .header-search input[type="search"] {
+    width: 130px;
+  }
+  .header-search input[type="search"]:focus {
+    width: 180px;
+  }
+  .search-results {
+    width: calc(100vw - 24px);
+    right: -12px;
+  }
+}

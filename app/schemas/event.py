@@ -62,6 +62,8 @@ class ArticleInEvent(BaseModel):
     grouping_confidence: Optional[float] = None
     is_read: Optional[bool] = False
     added_at: UtcDateTime = None
+    event_id: Optional[int] = None
+    event_name: Optional[str] = None
 
 
 class EventDetailResponse(BaseModel):

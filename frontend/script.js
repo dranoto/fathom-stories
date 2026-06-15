@@ -9,6 +9,7 @@ import {
 import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader, closeReader } from "./js/reader.js";
+import { setupSearch } from "./js/search.js";
 import { loadTheme, setupThemeButton } from "./js/theme.js";
 import { startCountdowns } from "./js/countdowns.js";
 import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
@@ -159,6 +160,7 @@ async function bootstrap() {
   loadTheme();
   setupThemeButton();
   setupReader();
+  setupSearch();
   setupMobileMenu(() => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
   registerServiceWorker();
 

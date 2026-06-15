@@ -79,3 +79,41 @@ export async function runRegroup() {
 export async function runFetch() {
   return handleFetch(`/api/grouping/fetch`, { method: "POST" });
 }
+
+export async function searchArticles({ keyword, limit = 20 } = {}) {
+  const params = new URLSearchParams();
+  if (keyword) params.set("keyword", keyword);
+  if (limit) params.set("limit", String(limit));
+  return handleFetch(`/api/events/search/articles?${params}`);
+}
+
+export async function listFeeds() {
+  return handleFetch(`/api/feeds`);
+}
+
+export async function addFeed({ url, name, fetch_interval_minutes }) {
+  return handleFetch(`/api/feeds`, {
+    method: "POST",
+    body: JSON.stringify({ url, name, fetch_interval_minutes }),
+  });
+}
+
+export async function removeFeed(id) {
+  return handleFetch(`/api/feeds/${id}`, { method: "DELETE" });
+}
+
+export async function pauseFeed(id) {
+  return handleFetch(`/api/feeds/${id}/pause`, { method: "POST" });
+}
+
+export async function unpauseFeed(id) {
+  return handleFetch(`/api/feeds/${id}/pause`, { method: "DELETE" });
+}
+
+export async function refreshFeed(id) {
+  return handleFetch(`/api/feeds/${id}/refresh`, { method: "POST" });
+}
+
+export async function markEventVisited(eventId) {
+  return handleFetch(`/api/events/${eventId}/visit`, { method: "POST" });
+}
