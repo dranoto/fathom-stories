@@ -1,8 +1,7 @@
 // frontend/js/search.js
 import { searchArticles } from "./apiService.js";
-import { getActiveEventId, setInboxOpen, setActiveEventId } from "./state.js";
 import { escapeHtml } from "./eventTabs.js";
-import { closeReader } from "./reader.js";
+import { selectEventTab, selectInboxTab } from "./tabActions.js";
 
 let debounceHandle = null;
 let currentQuery = "";
@@ -57,14 +56,11 @@ function renderResults(results) {
 async function openResult(articleId, eventId) {
   closeSearch();
   if (eventId) {
-    setInboxOpen(false);
-    setActiveEventId(eventId);
-    window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId } }));
+    await selectEventTab(eventId);
   } else {
-    setInboxOpen(true);
-    setActiveEventId(null);
-    window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId } }));
+    await selectInboxTab();
   }
+  window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId } }));
 }
 
 async function runSearch(q) {

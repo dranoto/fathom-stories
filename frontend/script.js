@@ -1,20 +1,21 @@
 // frontend/script.js
 import {
-  listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles, markEventVisited,
+  listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles,
 } from "./js/apiService.js";
 import {
-  setEvents, getEvents, setActiveEventId, setReadIds, getActiveEventId,
-  setInboxOpen, getInboxOpen, setInboxCounts,
+  setEvents, getEvents, setReadIds,
+  getActiveEventId, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
 import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
-import { setupReader, closeReader } from "./js/reader.js";
+import { setupReader } from "./js/reader.js";
 import { setupSearch } from "./js/search.js";
 import { loadTheme, setupThemeButton } from "./js/theme.js";
 import { startCountdowns } from "./js/countdowns.js";
 import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
 import { registerServiceWorker } from "./js/pwa.js";
 import { setupSwipeNav } from "./js/swipeNav.js";
+import { selectEventTab, selectInboxTab } from "./js/tabActions.js";
 
 async function refreshEvents() {
   let all = [];
@@ -43,30 +44,11 @@ async function refreshEvents() {
 }
 
 async function onTabSelect(eventId) {
-  setInboxOpen(false);
-  setActiveEventId(eventId);
-  closeReader();
-  markEventVisited(eventId).catch(() => {});
-  renderEventTabs(onTabSelect, onInboxSelect);
-  scrollActiveTabIntoView();
-  await renderActiveEventPane(eventId);
+  await selectEventTab(eventId);
 }
 
 async function onInboxSelect() {
-  setInboxOpen(true);
-  closeReader();
-  renderEventTabs(onTabSelect, onInboxSelect);
-  scrollActiveTabIntoView();
-  await renderInboxPane();
-}
-
-function scrollActiveTabIntoView() {
-  requestAnimationFrame(() => {
-    const active = document.querySelector("#event-tabs .event-tab.active");
-    if (active && typeof active.scrollIntoView === "function") {
-      active.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-    }
-  });
+  await selectInboxTab();
 }
 
 function setStatus(kind, text) {

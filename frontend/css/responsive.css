@@ -374,11 +374,9 @@ body {
   padding: 8px 12px;
 }
 
-/* Hamburger is hidden on tablet+ since the chips are visible */
+/* Hamburger is always visible: triggers mobile sheet on small viewports
+   and the anchored desktop panel on tablet+. */
 #btn-menu { display: inline-flex; }
-@media (min-width: 700px) {
-  #btn-menu { display: none; }
-}
 
 .mobile-menu {
   position: fixed;
