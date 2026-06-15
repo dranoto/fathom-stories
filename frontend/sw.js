@@ -1,5 +1,5 @@
 // fathom-stories service worker
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const SHELL_CACHE = `fathom-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `fathom-runtime-${CACHE_VERSION}`;
 
@@ -38,14 +38,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(cacheFirst(req, SHELL_CACHE));
     return;
   }
-  if (url.pathname.startsWith('/api/articles/') ||
-      url.pathname.startsWith('/api/events?') ||
-      url.pathname === '/api/events') {
+  if (url.pathname === '/api/events' ||
+      url.pathname.startsWith('/api/events/') ||
+      url.pathname.startsWith('/api/articles/') ||
+      url.pathname.startsWith('/api/articles')) {
     event.respondWith(networkFirst(req, RUNTIME_CACHE));
-    return;
-  }
-  if (url.pathname.startsWith('/api/events/')) {
-    event.respondWith(staleWhileRevalidate(req, RUNTIME_CACHE));
     return;
   }
 });
@@ -77,16 +74,6 @@ async function networkFirst(req, cacheName) {
     if (cached) return cached;
     return new Response('offline', { status: 503, statusText: 'offline' });
   }
-}
-
-async function staleWhileRevalidate(req, cacheName) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(req);
-  const fetchPromise = fetch(req).then((resp) => {
-    if (resp.ok) cache.put(req, resp.clone());
-    return resp;
-  }).catch(() => cached);
-  return cached || fetchPromise || new Response('offline', { status: 503 });
 }
 
 async function fetchAndUpdate(req, cache) {

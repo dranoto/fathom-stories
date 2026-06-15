@@ -43,6 +43,7 @@ async function refreshEvents() {
 
 async function onTabSelect(eventId) {
   await selectEventTab(eventId);
+  window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
 }
 
 async function onInboxSelect() {
@@ -186,6 +187,10 @@ async function bootstrap() {
   await refreshReadIds();
   await refreshInboxCounts();
   await refreshEvents();
+  const initialActiveId = getActiveEventId();
+  if (!getInboxOpen() && initialActiveId != null) {
+    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: initialActiveId } }));
+  }
   await refreshStats();
 }
 

@@ -20,7 +20,6 @@ export async function selectEventTab(eventId) {
   renderEventTabs(selectEventTab, selectInboxTab);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
-  window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
 }
 
 export async function selectInboxTab() {
