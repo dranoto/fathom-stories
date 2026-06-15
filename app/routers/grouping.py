@@ -29,7 +29,7 @@ async def get_schedule(
         except Exception as e:
             logger.warning(f"Failed to enumerate scheduler jobs: {e}")
     return {
-        "server_time": datetime.now(timezone.utc).isoformat(),
+        "server_time": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "jobs": jobs,
     }
 

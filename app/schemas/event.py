@@ -1,10 +1,14 @@
 # app/schemas/event.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Any
 from datetime import datetime
 
+from ._serializers import UtcDateTime
+
 
 class EventSummaryData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     timeline_narrative: Optional[Any] = None
     cross_source_synthesis: Optional[Any] = None
     progressive_summary: Optional[str] = None
@@ -13,9 +17,6 @@ class EventSummaryData(BaseModel):
     feed_count: Optional[int] = None
     date_range: Optional[str] = None
     key_developments: Optional[List[str]] = None
-
-    class Config:
-        from_attributes = True
 
 
 class EventCreate(BaseModel):
@@ -30,14 +31,16 @@ class EventUpdate(BaseModel):
 
 
 class EventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: Optional[str]
     status: str
-    created_at: datetime
-    last_article_at: Optional[datetime] = None
-    archived_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    created_at: UtcDateTime
+    last_article_at: UtcDateTime = None
+    archived_at: UtcDateTime = None
+    expires_at: UtcDateTime = None
     summary_version: Optional[int] = 0
     article_count: Optional[int] = 0
     unread_count: Optional[int] = 0
@@ -45,54 +48,48 @@ class EventResponse(BaseModel):
     feed_count: Optional[int] = 0
     importance_avg: Optional[float] = 0.0
 
-    class Config:
-        from_attributes = True
-
 
 class ArticleInEvent(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: Optional[str]
     publisher_name: Optional[str]
-    published_date: Optional[datetime]
+    published_date: UtcDateTime
     url: str
     word_count: Optional[int]
     importance_score: Optional[float] = None
     grouping_confidence: Optional[float] = None
     is_read: Optional[bool] = False
-    added_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    added_at: UtcDateTime = None
 
 
 class EventDetailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: Optional[str]
     status: str
-    created_at: datetime
-    last_article_at: Optional[datetime] = None
-    archived_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    created_at: UtcDateTime
+    last_article_at: UtcDateTime = None
+    archived_at: UtcDateTime = None
+    expires_at: UtcDateTime = None
     articles: List[ArticleInEvent]
     latest_summary: Optional[EventSummaryData] = None
     summary_version: Optional[int] = 0
 
-    class Config:
-        from_attributes = True
-
 
 class EventSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     event_id: int
     summary_json: EventSummaryData
     article_ids: List[int] = []
-    generated_at: datetime
+    generated_at: UtcDateTime
     article_count: int
     model_used: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 class MoveArticleRequest(BaseModel):
@@ -113,46 +110,43 @@ class SplitRequest(BaseModel):
 
 
 class ReclusterProposalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     kind: str
     payload: dict
     rationale: Optional[str] = None
-    created_at: datetime
+    created_at: UtcDateTime
     applied: int
-    applied_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    applied_at: UtcDateTime = None
 
 
 class GroupingFeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     article_id: int
     original_event_id: Optional[int]
     corrected_event_id: Optional[int]
     kind: str
     note: Optional[str]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+    created_at: UtcDateTime
 
 
 class ArticleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: Optional[str]
     publisher_name: Optional[str]
-    published_date: Optional[datetime]
+    published_date: UtcDateTime
     url: str
     word_count: Optional[int]
     importance_score: Optional[float] = None
     grouping_confidence: Optional[float] = None
     event_id: Optional[int] = None
-    fetched_at: Optional[datetime] = None
+    fetched_at: UtcDateTime = None
     is_read: Optional[bool] = False
-
-    class Config:
-        from_attributes = True
 
 
 class ArticleDetailOut(ArticleOut):
