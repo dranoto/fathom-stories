@@ -30,6 +30,67 @@ python -m app.cli serve
 # Reader UI: http://localhost:8000
 ```
 
+## Running as a systemd service (recommended for the dev box)
+
+The app runs under a **user-level systemd unit** (no sudo required) so it auto-restarts on crash and starts on login. Unit file:
+
+`~/.config/systemd/user/fathom-stories.service`
+
+```ini
+[Unit]
+Description=Fathom Stories (FastAPI reader + scheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/thankfulcarp/fathom-stories
+EnvironmentFile=/home/thankfulcarp/fathom-stories/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m app.cli serve
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/thankfulcarp/fathom-stories/logs/server.log
+StandardError=append:/home/thankfulcarp/fathom-stories/logs/server.log
+
+[Install]
+WantedBy=default.target
+```
+
+**Common commands** (all use `systemctl --user` since the unit lives in the user manager):
+
+```bash
+# Status / logs
+systemctl --user status fathom-stories.service
+journalctl --user -u fathom-stories.service -f
+tail -f /home/thankfulcarp/fathom-stories/logs/server.log
+
+# Restart (e.g. after pulling new code or editing .env / prompts)
+systemctl --user restart fathom-stories.service
+
+# Stop / start
+systemctl --user stop fathom-stories.service
+systemctl --user start fathom-stories.service
+
+# After editing the unit file itself
+systemctl --user daemon-reload
+systemctl --user restart fathom-stories.service
+
+# Enable at boot (already enabled, but for reference)
+systemctl --user enable fathom-stories.service
+```
+
+**To survive logout** (optional — only needed if you want it running when no user session is open):
+```bash
+sudo loginctl enable-linger thankfulcarp
+```
+
+**If you want to run ad-hoc instead** (kills the systemd-managed process when you exit):
+```bash
+pkill -f "app.cli serve"   # stop the systemd unit first
+python -m app.cli serve    # run in foreground
+```
+
 ## CLI Reference
 
 | Command | Purpose |
@@ -45,7 +106,7 @@ python -m app.cli serve
 | `python -m app.cli lifecycle` | One-shot archive/cool tick |
 | `python -m app.cli summarize <event_id>` | Generate/regenerate event summary |
 | `python -m app.cli stats` | Show counts |
-| `python -m app.cli serve` | Run main API on `$MAIN_PORT` (default 8000) with scheduler |
+| `python -m app.cli serve` | Run main API on `$MAIN_PORT` (default 8800) with scheduler. Usually run via systemd — see the "Running as a systemd service" section. |
 
 ## Code Style
 
