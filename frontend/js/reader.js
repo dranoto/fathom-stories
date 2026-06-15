@@ -185,6 +185,11 @@ async function renderEventPicker(article) {
   const picker = document.getElementById("reader-event-picker");
   const select = document.getElementById("reader-event-select");
   const status = document.getElementById("reader-move-status");
+  const moveBtn = document.getElementById("btn-confirm-move");
+  if (moveBtn) {
+    moveBtn.disabled = false;
+    moveBtn.textContent = "Move";
+  }
   if (!article.event_id) {
     picker.hidden = false;
     select.innerHTML = `<option value="">— select event —</option>`;
@@ -242,6 +247,8 @@ function setupRemoveButton(article) {
     return;
   }
   btn.hidden = false;
+  btn.disabled = false;
+  btn.textContent = "Remove from event";
   btn.onclick = async () => {
     if (!confirm("Remove this article from the event?\nIf the event would have fewer than 2 articles, the event will be disbanded.")) return;
     btn.disabled = true;
