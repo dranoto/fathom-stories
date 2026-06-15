@@ -169,6 +169,15 @@ body {
   animation: slide-up 0.2s ease-out;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
+  will-change: transform;
+}
+.reader-pane.swiping {
+  transition: none;
+  animation: none;
+}
+.reader-pane.swipe-dismissing {
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+  animation: none;
 }
 .reader-pane[hidden] {
   display: none !important;

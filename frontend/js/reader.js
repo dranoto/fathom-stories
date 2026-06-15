@@ -53,6 +53,76 @@ export function setupReader() {
     patchEventUnreadCount(currentArticle.id, currentArticle.event_id, nextIsRead);
     dispatchReadStateChanged(currentArticle.id, currentArticle.event_id, nextIsRead);
   });
+
+  setupReaderSwipeDismiss(document.getElementById("reader-pane"));
+}
+
+const SWIPE_DISMISS_THRESHOLD = 0.30;
+const SWIPE_DISMISS_VELOCITY = 0.5;
+
+function setupReaderSwipeDismiss(pane) {
+  if (!pane) return;
+  let tracking = null;
+
+  function isOnHeaderOrFooter(target) {
+    return target.closest(".reader-header") || target.closest(".reader-footer") || target.closest(".reader-event-picker");
+  }
+
+  pane.addEventListener("touchstart", (e) => {
+    if (pane.hidden) return;
+    if (e.touches.length !== 1) return;
+    if (!isOnHeaderOrFooter(e.target)) return;
+    const t = e.touches[0];
+    tracking = { startY: t.clientY, startT: Date.now(), lastY: t.clientY, lastT: Date.now() };
+  }, { passive: true });
+
+  pane.addEventListener("touchmove", (e) => {
+    if (!tracking) return;
+    const t = e.touches[0];
+    const dy = t.clientY - tracking.startY;
+    if (Math.abs(dy) < 5) return;
+    pane.classList.add("swiping");
+    pane.style.transform = `translateY(${dy}px)`;
+    tracking.lastY = t.clientY;
+    tracking.lastT = Date.now();
+  }, { passive: true });
+
+  function endDrag(e) {
+    if (!tracking) return;
+    const t = (e.changedTouches && e.changedTouches[0]) || null;
+    const endY = t ? t.clientY : tracking.lastY;
+    const dy = endY - tracking.startY;
+    const dt = Math.max(1, tracking.lastT - tracking.startT);
+    const velocity = Math.abs(dy) / dt;
+    const height = pane.offsetHeight || window.innerHeight;
+    const distanceRatio = Math.abs(dy) / height;
+    const dismiss = distanceRatio > SWIPE_DISMISS_THRESHOLD || velocity > SWIPE_DISMISS_VELOCITY;
+    pane.classList.remove("swiping");
+    if (dismiss) {
+      pane.classList.add("swipe-dismissing");
+      const exitDir = dy >= 0 ? 1 : -1;
+      pane.style.transform = `translateY(${exitDir * 100}vh)`;
+      pane.style.opacity = "0";
+      setTimeout(() => {
+        closeReader();
+        requestAnimationFrame(() => {
+          pane.classList.remove("swipe-dismissing");
+          pane.style.transform = "";
+          pane.style.opacity = "";
+        });
+      }, 200);
+    } else {
+      pane.style.transition = "transform 0.2s ease-out";
+      pane.style.transform = "";
+      setTimeout(() => {
+        pane.style.transition = "";
+      }, 200);
+    }
+    tracking = null;
+  }
+
+  pane.addEventListener("touchend", endDrag, { passive: true });
+  pane.addEventListener("touchcancel", endDrag, { passive: true });
 }
 
 async function openArticle(id) {
@@ -146,6 +216,7 @@ async function renderEventPicker(article) {
           window.dispatchEvent(new CustomEvent("article-moved", { detail: { articleId: article.id, eventId: evId } }));
         }
         btn.textContent = "Done ✓";
+        setTimeout(() => closeReader(), 800);
       } catch (e) {
         status.textContent = "Error: " + e.message;
         btn.disabled = false;
@@ -190,7 +261,7 @@ function setupRemoveButton(article) {
   };
 }
 
-function closeReader() {
+export function closeReader() {
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
   pane.hidden = true;

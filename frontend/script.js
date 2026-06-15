@@ -8,7 +8,7 @@ import {
 } from "./js/state.js";
 import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
-import { setupReader } from "./js/reader.js";
+import { setupReader, closeReader } from "./js/reader.js";
 import { loadTheme, setupThemeButton } from "./js/theme.js";
 import { startCountdowns } from "./js/countdowns.js";
 import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
@@ -44,6 +44,7 @@ async function refreshEvents() {
 async function onTabSelect(eventId) {
   setInboxOpen(false);
   setActiveEventId(eventId);
+  closeReader();
   renderEventTabs(onTabSelect, onInboxSelect);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
@@ -51,6 +52,7 @@ async function onTabSelect(eventId) {
 
 async function onInboxSelect() {
   setInboxOpen(true);
+  closeReader();
   renderEventTabs(onTabSelect, onInboxSelect);
   scrollActiveTabIntoView();
   await renderInboxPane();
