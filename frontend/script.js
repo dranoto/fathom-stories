@@ -3,8 +3,8 @@ import {
   listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles,
 } from "./js/apiService.js";
 import {
-  setEvents, getEvents, setReadIds,
-  getActiveEventId, getInboxOpen, setInboxCounts,
+  setEvents, getEvents, setReadIds, setActiveEventId,
+  getActiveEventId, setInboxOpen, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
 import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
@@ -35,6 +35,7 @@ async function refreshEvents() {
     await renderActiveEventPane(activeId);
   } else if (all.length > 0) {
     setActiveEventId(all[0].id);
+    renderEventTabs(onTabSelect, onInboxSelect);
     await renderActiveEventPane(all[0].id);
   } else {
     setInboxOpen(true);
