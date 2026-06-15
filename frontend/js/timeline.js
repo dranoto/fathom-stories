@@ -1,5 +1,5 @@
 // frontend/js/timeline.js
-import { getActiveEventDetail, getCurrentArticleId, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts } from "./state.js";
+import { getActiveEventDetail, getActiveEventId, getCurrentArticleId, isEventRegenerating, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts } from "./state.js";
 import { getEvent, listUngroupedArticles, runRegroup } from "./apiService.js";
 import { renderEventTabs, escapeHtml as tabsEscape } from "./eventTabs.js";
 
@@ -9,6 +9,13 @@ window.addEventListener("current-article-changed", (e) => {
   if (id != null) {
     const target = document.querySelector(`.bubble[data-article-id="${id}"]`);
     if (target) target.classList.add("current-article");
+  }
+});
+
+window.addEventListener("regenerating-events-changed", () => {
+  const activeId = getActiveEventId();
+  if (activeId != null) {
+    renderActiveEventPane(activeId);
   }
 });
 
@@ -69,10 +76,17 @@ export async function renderActiveEventPane(eventId) {
 function renderSummaryBubble(summary, stale, eventId) {
   const version = summary ? (summary.article_count || 0) : 0;
   const dotTitle = summary ? `v${version}` : "pending generation";
+  const regenerating = isEventRegenerating(eventId);
+  const regenChip = regenerating
+    ? `<span class="summary-regen-chip" title="Summary is regenerating in the background"><span class="summary-regen-dot"></span>regenerating</span>`
+    : "";
   return `<div class="timeline-row summary-row">
     <div class="ts">summary</div>
     <div class="bubble summary-bubble size-lg" data-summary-id="${eventId}">
-      <div class="bubble-title">Event Summary</div>
+      <div class="bubble-title-row">
+        <div class="bubble-title">Event Summary</div>
+        ${regenChip}
+      </div>
       <div class="bubble-summary-actions">
         <span class="imp" style="background:var(--info)" title="${dotTitle}"></span>
         <button class="summary-chat-btn" data-action="chat-with-event" data-event-id="${eventId}" title="Chat with this event (coming soon)">Chat with event</button>

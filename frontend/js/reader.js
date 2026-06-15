@@ -8,6 +8,8 @@ import {
   dispatchReadStateChanged,
   dispatchReaderClosed,
   setCurrentArticleId,
+  getActiveEventDetail,
+  markEventRegenerating,
 } from "./state.js";
 
 let currentArticle = null;
@@ -216,14 +218,13 @@ async function renderEventPicker(article) {
         const res = await assignArticleToEvent(evId, article.id);
         if (res.already_in) {
           status.textContent = "Already in that event.";
+          btn.disabled = false;
+          btn.textContent = orig;
         } else {
-          status.textContent = res.summary_regenerated
-            ? "Moved · summary regenerated ✓"
-            : "Moved · (summary regen failed, will retry next regroup)";
+          status.textContent = "Moved";
+          markEventRegenerating(evId);
           window.dispatchEvent(new CustomEvent("article-moved", { detail: { articleId: article.id, eventId: evId } }));
-        }
-        btn.textContent = "Done ✓";
-        if (!res.already_in) {
+          btn.textContent = "Done ✓";
           window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: evId } }));
           window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: article.id } }));
         }
@@ -250,7 +251,13 @@ function setupRemoveButton(article) {
   btn.disabled = false;
   btn.textContent = "Remove from event";
   btn.onclick = async () => {
-    if (!confirm("Remove this article from the event?\nIf the event would have fewer than 2 articles, the event will be disbanded.")) return;
+    const detail = getActiveEventDetail();
+    const eventSize = (detail && detail.id === article.event_id && Array.isArray(detail.articles))
+      ? detail.articles.length
+      : null;
+    if (eventSize === 2) {
+      if (!confirm("This event has only 2 articles. Removing this one will leave just 1, and the event will be disbanded. Continue?")) return;
+    }
     btn.disabled = true;
     const orig = btn.textContent;
     btn.textContent = "Removing…";
@@ -258,6 +265,9 @@ function setupRemoveButton(article) {
       const res = await removeArticleFromEvent(article.event_id, article.id);
       btn.textContent = "Done ✓";
       const targetEventId = article.event_id;
+      if (!res.disbanded) {
+        markEventRegenerating(targetEventId);
+      }
       window.dispatchEvent(new CustomEvent("article-removed", {
         detail: {
           articleId: article.id,

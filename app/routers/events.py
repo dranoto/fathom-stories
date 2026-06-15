@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy import desc, func
 
@@ -24,6 +24,22 @@ from .. import config as app_config
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+
+
+async def _regen_summary_after_move(event_id: int, article_id: int, llm) -> None:
+    try:
+        from ..grouping.summary_service import generate_incremental_summary_for_event
+        await generate_incremental_summary_for_event(event_id, [article_id], llm)
+    except Exception as e:
+        logger.error(f"Background summary regen after move failed for event {event_id}: {e}", exc_info=True)
+
+
+async def _regen_summary_after_remove(event_id: int, llm) -> None:
+    try:
+        from ..grouping.summary_service import regenerate_summary_for_event
+        await regenerate_summary_for_event(event_id, llm)
+    except Exception as e:
+        logger.error(f"Background summary regen after remove failed for event {event_id}: {e}", exc_info=True)
 
 
 @router.get("", response_model=List[EventResponse])
@@ -331,6 +347,7 @@ async def add_article_to_event(
     event_id: int,
     article_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = verify_event_exists(db, event_id)
@@ -360,23 +377,19 @@ async def add_article_to_event(
         logger.error(f"Error adding article to event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to add article to event")
 
-    summary_regenerated = False
     if not already_in:
         try:
             llm = get_llm_summary(request)
-            from ..grouping.summary_service import generate_incremental_summary_for_event
-            summary_regenerated = await generate_incremental_summary_for_event(event_id, [article_id], llm)
+            background_tasks.add_task(_regen_summary_after_move, event_id, article_id, llm)
         except HTTPException:
             pass
-        except Exception as e:
-            logger.error(f"Auto-summary after manual add failed: {e}", exc_info=True)
 
     return {
         "message": "Article added to event" if not already_in else "Article already in event",
         "article_id": article_id,
         "event_id": event_id,
         "already_in": already_in,
-        "summary_regenerated": summary_regenerated,
+        "summary_regenerated": False,
     }
 
 
@@ -385,6 +398,7 @@ async def remove_article_from_event(
     event_id: int,
     article_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = verify_event_exists(db, event_id)
@@ -419,23 +433,19 @@ async def remove_article_from_event(
         logger.error(f"Error removing article from event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to remove article")
 
-    summary_regenerated = False
     if not disbanded:
         try:
             llm = get_llm_summary(request)
-            from ..grouping.summary_service import regenerate_summary_for_event
-            summary_regenerated = await regenerate_summary_for_event(event_id, llm)
+            background_tasks.add_task(_regen_summary_after_remove, event_id, llm)
         except HTTPException:
             pass
-        except Exception as e:
-            logger.error(f"Auto-summary after manual remove failed: {e}", exc_info=True)
 
     return {
         "message": "Article removed" + (" and event disbanded" if disbanded else ""),
         "disbanded": disbanded,
         "article_id": article_id,
         "event_id": event_id,
-        "summary_regenerated": summary_regenerated,
+        "summary_regenerated": False,
     }
 
 

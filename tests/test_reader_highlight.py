@@ -21,6 +21,10 @@ Tests:
      article navigates to the event summary (no picker) and the article is
      gone from the timeline.
      [SLOW: same as test 3.]
+  5. test_move_remove_api_returns_quickly — the move and remove HTTP endpoints
+     return in <5s (i.e. the LLM call is fire-and-forget in the background
+     and not blocking the response). [FAST: uses the REST API directly, no
+     browser. Restores state to its initial value at the end.]
 
 Each test creates a fresh browser context, so they don't share state. The
 server is expected to be running on $BASE_URL (default http://localhost:8800)
@@ -303,6 +307,63 @@ async def test_remove_flow_navigates_immediately(browser):
     await ctx.close()
 
 
+async def test_move_remove_api_returns_quickly():
+    """Direct REST test: move and remove endpoints must return in <5s.
+    The LLM call must be fire-and-forget via FastAPI BackgroundTasks, not
+    blocking the response. Picks an ungrouped article and an event, cycles
+    move+remove, and restores state at the end.
+    """
+    import urllib.request
+    import urllib.error
+    import json
+
+    print("=== test_move_remove_api_returns_quickly ===")
+
+    # Find an ungrouped article
+    with urllib.request.urlopen(f"{BASE_URL}/api/articles?ungrouped=true&limit=1&visitor_id=test") as r:
+        ungrouped = json.loads(r.read())
+    assert ungrouped, "no ungrouped articles available"
+    article_id = ungrouped[0]["id"]
+    log(f"using ungrouped article: {article_id}")
+
+    # Find an event to move into
+    with urllib.request.urlopen(f"{BASE_URL}/api/events?min_articles=2&status=active&visitor_id=test") as r:
+        events = json.loads(r.read())
+    assert events, "no events available"
+    event_id = events[0]["id"]
+    log(f"using destination event: {event_id}")
+
+    # Time the MOVE
+    t0 = time.time()
+    req = urllib.request.Request(
+        f"{BASE_URL}/api/events/{event_id}/articles/{article_id}",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req) as r:
+        body = json.loads(r.read())
+    move_time = time.time() - t0
+    log(f"move response: {body} took {move_time:.2f}s")
+    assert move_time < 5, f"move took {move_time:.2f}s, expected <5s"
+    assert body.get("summary_regenerated") is False, "summary_regenerated should be False (background)"
+
+    # Time the REMOVE
+    t0 = time.time()
+    req = urllib.request.Request(
+        f"{BASE_URL}/api/events/{event_id}/articles/{article_id}",
+        method="DELETE",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req) as r:
+        body = json.loads(r.read())
+    remove_time = time.time() - t0
+    log(f"remove response: {body} took {remove_time:.2f}s")
+    assert remove_time < 5, f"remove took {remove_time:.2f}s, expected <5s"
+    assert body.get("summary_regenerated") is False, "summary_regenerated should be False (background)"
+
+    print("  PASS")
+
+
 async def main():
     fast_only = "--fast" in sys.argv
     failed = []
@@ -311,20 +372,26 @@ async def main():
             headless=HEADLESS,
             args=["--no-sandbox"],
         )
-        all_tests = [
+        browser_tests = [
             ("highlight_opened_article", test_highlight_opened_article),
             ("highlight_switches_when_opening_another_article", test_highlight_switches_when_opening_another_article),
             ("move_flow_navigates_immediately", test_move_flow_navigates_immediately),
             ("remove_flow_navigates_immediately", test_remove_flow_navigates_immediately),
         ]
+        no_browser_tests = [
+            ("move_remove_api_returns_quickly", test_move_remove_api_returns_quickly),
+        ]
         if fast_only:
-            tests = all_tests[:2]
-            print("--fast: running only highlight tests (no LLM dependency)")
+            tests = browser_tests[:2] + no_browser_tests
+            print("--fast: running highlight + API latency tests (no LLM dependency)")
         else:
-            tests = all_tests
+            tests = browser_tests + no_browser_tests
         for name, fn in tests:
             try:
-                await fn(browser)
+                if fn in [t[1] for t in no_browser_tests]:
+                    await fn()
+                else:
+                    await fn(browser)
             except AssertionError as e:
                 print(f"  FAIL: {e}", flush=True)
                 failed.append(name)

@@ -181,6 +181,41 @@
 .bubble.size-lg { padding: 16px 20px; font-size: 14px; }
 .bubble.size-lg .bubble-title { font-size: 15px; font-weight: 600; }
 
+.bubble-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.bubble-title-row .bubble-title {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+.summary-regen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.summary-regen-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: summary-regen-pulse 1.2s ease-in-out infinite;
+}
+@keyframes summary-regen-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
 .bubble-title {
   font-size: 14px;
   font-weight: 500;

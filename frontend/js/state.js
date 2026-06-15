@@ -9,6 +9,8 @@ let inboxTotal = 0;
 let inboxUnread = 0;
 let inboxRead = 0;
 let currentArticleId = null;
+let regeneratingEventIds = new Set();
+let regeneratingTimers = new Map();
 
 export function getEvents() { return events; }
 export function setEvents(v) { events = v; }
@@ -38,6 +40,19 @@ export function setCurrentArticleId(id) {
   window.dispatchEvent(new CustomEvent("current-article-changed", {
     detail: { articleId: id },
   }));
+}
+export function isEventRegenerating(eventId) { return regeneratingEventIds.has(eventId); }
+export function markEventRegenerating(eventId, durationMs = 60000) {
+  regeneratingEventIds.add(eventId);
+  if (regeneratingTimers.has(eventId)) {
+    clearTimeout(regeneratingTimers.get(eventId));
+  }
+  regeneratingTimers.set(eventId, setTimeout(() => {
+    regeneratingEventIds.delete(eventId);
+    regeneratingTimers.delete(eventId);
+    window.dispatchEvent(new CustomEvent("regenerating-events-changed"));
+  }, durationMs));
+  window.dispatchEvent(new CustomEvent("regenerating-events-changed"));
 }
 
 export function patchEventUnreadCount(articleId, eventId, isRead) {
