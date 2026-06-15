@@ -20,27 +20,38 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
       const cls = [
         "event-tab",
         e.id === activeId && !inboxOpen ? "active" : "",
-        e.status === "cooling" ? "cooling" : "",
       ].filter(Boolean).join(" ");
       const total = e.article_count || 0;
       const unread = e.unread_count || 0;
       const allRead = total > 0 && unread === 0;
-      const badgeCls = allRead ? "badge badge-read" : (unread > 0 ? "badge badge-unread" : "badge");
-      const badge = total > 0
-        ? `<span class="${badgeCls}" title="${unread} unread of ${total}">${unread}<span class="sep">/</span>${total}</span>`
+      const metaLine = total > 0
+        ? `${total} article${total === 1 ? "" : "s"}${allRead ? " · all read" : ` · ${unread} unread`}`
         : "";
-      return `<div class="${cls}" data-event-id="${e.id}">
-        <span class="name">${escapeHtml(e.name)}</span>${badge}
+      const unreadDot = unread > 0
+        ? `<span class="unread-dot" title="${unread} unread"></span>`
+        : "";
+      const statusIcon = e.status === "cooling"
+        ? `<span class="status-icon">❄</span>`
+        : "";
+      return `<div class="${cls}" data-event-id="${e.id}" title="${escapeHtml(e.name)}">
+        ${unreadDot}
+        <div class="name">${statusIcon}${escapeHtml(e.name)}</div>
+        ${metaLine ? `<div class="meta">${metaLine}</div>` : ""}
       </div>`;
     })
     .join("");
 
   const inboxCls = inboxOpen ? "active" : "";
-  const inboxBadge = inboxN > 0
-    ? `<span class="badge inbox-badge" title="${inboxU} unread, ${inboxR} read">${inboxU}<span class="sep">/</span>${inboxN}</span>`
+  const inboxMeta = inboxN > 0
+    ? `${inboxN} ungrouped${inboxU > 0 ? ` · ${inboxU} unread` : ""}`
+    : "no articles";
+  const inboxUnreadDot = inboxU > 0
+    ? `<span class="unread-dot" title="${inboxU} unread"></span>`
     : "";
-  const inboxHtml = `<div class="event-tab inbox-tab ${inboxCls}" data-inbox="1">
-    <span class="name">Inbox</span>${inboxBadge}
+  const inboxHtml = `<div class="event-tab ${inboxCls}" data-inbox="1" title="Ungrouped articles">
+    ${inboxUnreadDot}
+    <div class="name">Inbox</div>
+    <div class="meta">${inboxMeta}</div>
   </div>`;
 
   container.innerHTML = tabsHtml + inboxHtml;
