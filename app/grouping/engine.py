@@ -82,7 +82,7 @@ def find_or_create_event(
         name=name.strip(),
         status="active",
         last_article_at=anchor or now,
-        expires_at=reset_expiry(anchor=anchor or now),
+        expires_at=reset_expiry(),
     )
     db.add(new_event)
     db.flush()
@@ -198,7 +198,7 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                         event.last_article_at = article.published_date or now
                     event.status = "active"
                     event.archived_at = None
-                    reset_expiry_on_event(event, anchor=article.published_date or now)
+                    reset_expiry_on_event(event)
                     event_increments[event.id].append(article_id)
                     counts["existing"] += 1
                 elif decision == "new":
@@ -222,7 +222,7 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                         counts["new"] += 1
                     else:
                         counts[outcome] += 1
-                        reset_expiry_on_event(new_event, anchor=article.published_date or now)
+                        reset_expiry_on_event(new_event)
                 elif decision == "uncategorized":
                     counts["uncategorized"] += 1
                     article.grouped_at = now
@@ -405,7 +405,7 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                         event.last_article_at = article.published_date or now
                     event.status = "active"
                     event.archived_at = None
-                    reset_expiry_on_event(event, anchor=article.published_date or now)
+                    reset_expiry_on_event(event)
                     event_increments[event.id].append(article_id)
                     counts["existing"] += 1
                 elif decision == "uncategorized":
@@ -450,7 +450,7 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                     art.grouped_at = now
                     if not new_event.last_article_at or (art.published_date and art.published_date > new_event.last_article_at):
                         new_event.last_article_at = art.published_date or now
-                    reset_expiry_on_event(new_event, anchor=art.published_date or now)
+                    reset_expiry_on_event(new_event)
                     event_increments[new_event.id].append(art.id)
             else:
                 for item in items:

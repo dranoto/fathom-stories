@@ -125,7 +125,7 @@ async def create_event(
 ):
     event = Event(name=event_data.name.strip(), description=event_data.description, status="active")
     from ..grouping.lifecycle import reset_expiry
-    event.expires_at = reset_expiry(anchor=datetime.now(timezone.utc))
+    event.expires_at = reset_expiry()
     db.add(event)
     try:
         db.commit()
@@ -306,7 +306,7 @@ async def add_article_to_event(
     event.status = "active"
     event.archived_at = None
     from ..grouping.lifecycle import reset_expiry_on_event
-    reset_expiry_on_event(event, anchor=article.published_date or datetime.now(timezone.utc))
+    reset_expiry_on_event(event)
     record_correction(
         article_id=article_id,
         kind="move",
@@ -445,7 +445,7 @@ async def move_article(
         new_ev = Event(
             name=body.new_event_name.strip(),
             status="active",
-            expires_at=reset_expiry(anchor=article.published_date or datetime.now(timezone.utc)),
+            expires_at=reset_expiry(),
         )
         db.add(new_ev)
         db.flush()
@@ -469,7 +469,7 @@ async def move_article(
         from ..grouping.lifecycle import reset_expiry_on_event
         target_ev = db.query(Event).filter(Event.id == target_id).first()
         if target_ev is not None:
-            reset_expiry_on_event(target_ev, anchor=article.published_date or datetime.now(timezone.utc))
+            reset_expiry_on_event(target_ev)
     try:
         db.commit()
     except Exception as e:
@@ -537,14 +537,14 @@ async def split_event(
         .all()
     )
     for art in split_articles:
-        reset_expiry_on_event(new_ev, anchor=art.published_date or datetime.now(timezone.utc))
+        reset_expiry_on_event(new_ev)
     if split_articles:
         new_ev.last_article_at = max(
             (a.published_date for a in split_articles if a.published_date),
             default=None,
         ) or datetime.now(timezone.utc)
     if new_ev.expires_at is None:
-        new_ev.expires_at = reset_expiry(anchor=datetime.now(timezone.utc))
+        new_ev.expires_at = reset_expiry()
     db.query(Article).filter(Article.id.in_(body.article_ids), Article.event_id == event_id).update(
         {Article.event_id: new_ev.id}, synchronize_session=False
     )

@@ -11,30 +11,21 @@ from .. import config as app_config
 logger = logging.getLogger(__name__)
 
 
-def reset_expiry(anchor: Optional[datetime] = None) -> datetime:
+def reset_expiry() -> datetime:
     """
-    Returns the event's new expiry timestamp.
+    Returns the event's new expiry timestamp: now + EVENT_TTL_RESET_HOURS.
 
-    The timer is `max(article.published_date, now) + EVENT_TTL_RESET_HOURS`.
-    A freshly-arrived article gives a full 48h window. A stale article (1+ day
-    old) still gets a full 48h window, anchored to now. If no anchor is given,
-    uses now (for brand-new events with no articles yet).
+    Every article reset is anchored to now. The timer never exceeds 48h from
+    the moment of assignment, regardless of the article's published_date.
+    A freshly-arrived article gives a full 48h window. A stale article also
+    gives a full 48h window, anchored to now. A future-dated article does
+    not push the cap forward.
     """
-    now = datetime.now(timezone.utc)
-    if anchor is not None:
-        if anchor.tzinfo is None:
-            anchor = anchor.replace(tzinfo=timezone.utc)
-        anchor = max(anchor, now)
-    else:
-        anchor = now
-    return anchor + timedelta(hours=app_config.EVENT_TTL_RESET_HOURS)
+    return datetime.now(timezone.utc) + timedelta(hours=app_config.EVENT_TTL_RESET_HOURS)
 
 
-def reset_expiry_on_event(
-    event: Event,
-    anchor: Optional[datetime] = None,
-) -> None:
-    event.expires_at = reset_expiry(anchor)
+def reset_expiry_on_event(event: Event) -> None:
+    event.expires_at = reset_expiry()
 
 
 def set_event_status(event_id: int, status: str) -> bool:
@@ -63,7 +54,7 @@ def revive_event(event_id: int) -> bool:
             .order_by(desc(Article.published_date), desc(Article.fetched_at))
             .first()
         )
-        ev.expires_at = reset_expiry(anchor=newest.published_date if newest else ev.last_article_at)
+        ev.expires_at = reset_expiry()
     logger.info(f"LIFECYCLE: revived event {event_id} (expires_at={ev.expires_at})")
     return True
 

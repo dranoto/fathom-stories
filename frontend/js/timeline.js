@@ -36,7 +36,7 @@ export async function renderActiveEventPane(eventId) {
         <div class="expiry-row">
           <span class="expiry-chip" data-expires-at="${expiresAt.toISOString()}" title="Event auto-archives at ${escapeHtml(expiresAt.toLocaleString())}">
             <span class="expiry-label">expires in</span>
-            <span class="expiry-time">--:--</span>
+            <span class="expiry-time">--</span>
           </span>
         </div>
       ` : ""}
@@ -159,13 +159,9 @@ function startExpiryCountdown(pane, expiresAt) {
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
     const s = total % 60;
-    if (h >= 24) {
-      const d = Math.floor(h / 24);
-      const rh = h % 24;
-      return `${d}d ${rh}h`;
-    }
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    if (h >= 1) return `${h}h ${String(m).padStart(2, "0")}m`;
+    if (m >= 1) return `${m}m ${String(s).padStart(2, "0")}s`;
+    return `${s}s`;
   }
 
   function tick() {

@@ -84,14 +84,39 @@ def cmd_backfill_expiry(_args):
         if not targets:
             print("No events with NULL expires_at; nothing to do.")
             return
-        from .grouping.lifecycle import initial_expiry
-        now = datetime.now(timezone.utc)
+        from .grouping.lifecycle import reset_expiry
         n = 0
         for ev in targets:
-            anchor = ev.last_article_at or ev.created_at or now
-            ev.expires_at = initial_expiry(anchor=anchor, importance_score=None, now=now)
+            ev.expires_at = reset_expiry()
             n += 1
     print(f"Backfilled expires_at on {n} events.")
+
+
+def cmd_backfill_expiry_48h(args):
+    """
+    One-shot: reset every active event's expires_at to now + 48h.
+
+    Use this after the initial migration to clean up stale 24h values
+    that the original backfill set before the rule changed to 48h.
+    """
+    from .database.models import Event
+    from .grouping.lifecycle import reset_expiry
+    with db_session_scope() as db:
+        targets = db.query(Event).filter(Event.status == "active").all()
+        if not targets:
+            print("No active events.")
+            return
+        new_expiry = reset_expiry()
+        for ev in targets:
+            old = ev.expires_at
+            if not args.apply:
+                print(f"  RESET: id={ev.id} name={ev.name!r} {old} -> {new_expiry}")
+            else:
+                ev.expires_at = new_expiry
+        if not args.apply:
+            print(f"\n{len(targets)} event(s) would be reset. Re-run with --apply to commit.")
+            return
+    print(f"\nReset {len(targets)} event(s) to expires_at = {new_expiry}.")
 
 
 def cmd_seed_feeds(_args):
@@ -406,7 +431,7 @@ def cmd_revive_recent(args):
             return
 
         for ev in targets:
-            new_expiry = reset_expiry(anchor=ev.last_article_at)
+            new_expiry = reset_expiry()
             if not args.apply:
                 print(f"  REVIVE: id={ev.id} name={ev.name!r} last_article_at={ev.last_article_at} -> expires_at={new_expiry}")
             else:
@@ -445,6 +470,9 @@ def main():
     sub.add_parser("init-db", help="Create database tables").set_defaults(func=cmd_init_db)
     sub.add_parser("migrate-visitor-id", help="Drop & recreate article_reads with visitor_id column (per-browser read state)").set_defaults(func=cmd_migrate_visitor_id)
     sub.add_parser("backfill-expiry", help="One-shot: set expires_at on events with NULL expires_at").set_defaults(func=cmd_backfill_expiry)
+    p_bf48 = sub.add_parser("backfill-expiry-48h", help="One-shot: reset every active event's expires_at to now + 48h. Dry-run by default.")
+    p_bf48.add_argument("--apply", action="store_true", help="Commit the reset (default: dry-run)")
+    p_bf48.set_defaults(func=cmd_backfill_expiry_48h)
     sub.add_parser("seed-feeds", help="Add feeds from .env RSS_FEED_URLS").set_defaults(func=cmd_seed_feeds)
     sub.add_parser("cleanup-bad", help="Delete articles with scraping errors or below MIN_ARTICLE_WORD_COUNT").set_defaults(func=cmd_cleanup_bad)
     sub.add_parser("fetch", help="One-shot RSS fetch + scrape").set_defaults(func=cmd_fetch)
