@@ -29,6 +29,11 @@ def _parse_response(content: str) -> Dict[str, Any]:
 
 
 def fetch_recluster_window() -> Tuple[List[Event], List[Event], List[Event], List[Article]]:
+    # Archived events are bounded to ARCHIVE_REVIVE_WINDOW_DAYS (default 30d) so
+    # the LLM only sees revival candidates that are still plausibly worth bringing
+    # back. Anything older has been (or will be) hard-deleted by the archive purger
+    # in lifecycle.purge_ancient_archives (default 180d cutoff). Regroup never
+    # reads the archive at all — it only sees active + cooling events.
     cutoff_for_archived = datetime.now(timezone.utc) - timedelta(days=app_config.ARCHIVE_REVIVE_WINDOW_DAYS)
     with db_session_scope() as db:
         active = (

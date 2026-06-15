@@ -68,6 +68,7 @@ class Event(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
     last_article_at = Column(DateTime(timezone=True), nullable=True, index=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
     summary_article_count = Column(Integer, nullable=True, default=0)
     last_summary_at = Column(DateTime(timezone=True), nullable=True)
     summary_version = Column(Integer, nullable=True, default=0)

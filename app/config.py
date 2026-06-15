@@ -76,10 +76,48 @@ except ValueError:
     AUTO_ARCHIVE_DAYS = 7
 
 try:
-    ARCHIVE_REVIVE_WINDOW_DAYS = int(os.getenv("ARCHIVE_REVIVE_WINDOW_DAYS", 30))
+    ARCHIVE_REVIVE_WINDOW_DAYS = int(os.getenv("ARCHIVE_REVIVE_WINDOW_DAYS", "30"))
 except ValueError:
     logger.warning("Invalid ARCHIVE_REVIVE_WINDOW_DAYS in .env. Using default 30.")
     ARCHIVE_REVIVE_WINDOW_DAYS = 30
+
+try:
+    EVENT_TTL_BASE_HOURS = int(os.getenv("EVENT_TTL_BASE_HOURS", "24"))
+except ValueError:
+    logger.warning("Invalid EVENT_TTL_BASE_HOURS in .env. Using default 24.")
+    EVENT_TTL_BASE_HOURS = 24
+
+try:
+    EVENT_TTL_MAX_HOURS = int(os.getenv("EVENT_TTL_MAX_HOURS", str(14 * 24)))
+except ValueError:
+    logger.warning("Invalid EVENT_TTL_MAX_HOURS in .env. Using default 336.")
+    EVENT_TTL_MAX_HOURS = 14 * 24
+
+EVENT_TTL_IMPORTANCE_WEIGHTED = os.getenv("EVENT_TTL_IMPORTANCE_WEIGHTED", "true").lower() in ("1", "true", "t", "yes")
+
+try:
+    PURGE_ARCHIVE_AFTER_DAYS = int(os.getenv("PURGE_ARCHIVE_AFTER_DAYS", "180"))
+except ValueError:
+    logger.warning("Invalid PURGE_ARCHIVE_AFTER_DAYS in .env. Using default 180.")
+    PURGE_ARCHIVE_AFTER_DAYS = 180
+
+try:
+    PURGE_BATCH_LIMIT = int(os.getenv("PURGE_BATCH_LIMIT", "200"))
+except ValueError:
+    logger.warning("Invalid PURGE_BATCH_LIMIT in .env. Using default 200.")
+    PURGE_BATCH_LIMIT = 200
+
+try:
+    PURGE_EMPTY_BATCH_LIMIT = int(os.getenv("PURGE_EMPTY_BATCH_LIMIT", "200"))
+except ValueError:
+    logger.warning("Invalid PURGE_EMPTY_BATCH_LIMIT in .env. Using default 200.")
+    PURGE_EMPTY_BATCH_LIMIT = 200
+
+try:
+    PURGE_EMPTY_FLOOR_SECONDS = int(os.getenv("PURGE_EMPTY_FLOOR_SECONDS", "30"))
+except ValueError:
+    logger.warning("Invalid PURGE_EMPTY_FLOOR_SECONDS in .env. Using default 30.")
+    PURGE_EMPTY_FLOOR_SECONDS = 30
 
 # --- Scraper Configuration ---
 USER_AGENT = os.getenv(
@@ -357,6 +395,31 @@ Return EXACTLY this JSON (no markdown, no extra text):
   ]
 }}""")
 
+DEFAULT_DEDUP_PROMPT = os.getenv("DEFAULT_DEDUP_PROMPT", """You are reviewing active and cooling news events to identify duplicates that should be merged.
+
+Two events are duplicates if they are about the same underlying story — same topic, same actors, same time period. Differences in naming (abbreviations, word order, slight rephrasing) do NOT make them different stories.
+
+For each pair you identify, return the older event as "older_id" (the one to KEEP) and the newer one as "newer_id" (the one to MERGE INTO the older and then delete). Be conservative — when in doubt, do NOT merge. False-positive merges lose article history.
+
+Also assign a confidence score 0-1 for each pair. Only return pairs with confidence >= 0.7.
+
+Active and cooling events (newest first):
+{events_json}
+
+Return EXACTLY this JSON (no markdown, no extra text):
+{{
+  "merge_pairs": [
+    {{
+      "older_id": <id>,
+      "newer_id": <id>,
+      "confidence": <float 0-1>,
+      "reason": "<short justification — what makes these the same story>"
+    }}
+  ]
+}}
+
+If no duplicates, return: {{"merge_pairs": []}}""")
+
 
 if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY environment variable is not set. LLM features will be impaired.")
@@ -369,4 +432,10 @@ logger.info(f"CONFIG: RSS_FEED_URLS count={len(RSS_FEED_URLS)}")
 logger.info(f"CONFIG: PATH_TO_EXTENSION={PATH_TO_EXTENSION}")
 logger.info(f"CONFIG: USE_HEADLESS_BROWSER={USE_HEADLESS_BROWSER}")
 logger.info(f"CONFIG: AUTO_ARCHIVE_DAYS={AUTO_ARCHIVE_DAYS}, RECLUSTER_HOUR_UTC={RECLUSTER_HOUR_UTC}")
+logger.info(
+    f"CONFIG: EVENT_TTL_BASE_HOURS={EVENT_TTL_BASE_HOURS}, EVENT_TTL_MAX_HOURS={EVENT_TTL_MAX_HOURS}, "
+    f"EVENT_TTL_IMPORTANCE_WEIGHTED={EVENT_TTL_IMPORTANCE_WEIGHTED}, "
+    f"PURGE_ARCHIVE_AFTER_DAYS={PURGE_ARCHIVE_AFTER_DAYS}, PURGE_BATCH_LIMIT={PURGE_BATCH_LIMIT}, "
+    f"PURGE_EMPTY_BATCH_LIMIT={PURGE_EMPTY_BATCH_LIMIT}, PURGE_EMPTY_FLOOR_SECONDS={PURGE_EMPTY_FLOOR_SECONDS}"
+)
 logger.info(f"CONFIG: MAIN_PORT={MAIN_PORT}")

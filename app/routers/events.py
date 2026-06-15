@@ -37,6 +37,16 @@ async def list_events(
     if status:
         q = q.filter(Event.status == status)
     events = q.order_by(desc(Event.last_article_at), desc(Event.created_at)).all()
+    if events:
+        try:
+            from ..grouping.lifecycle import reap_expired_in_list
+            reap_expired_in_list(db, [e.id for e in events])
+            db.commit()
+            if status:
+                events = [e for e in events if e.status == status]
+        except Exception as e:
+            logger.warning(f"Lazy reap failed in list_events: {e}", exc_info=True)
+            db.rollback()
     if not events:
         return []
 
@@ -48,7 +58,7 @@ async def list_events(
         .all()
     )
 
-    if min_articles > 1:
+    if min_articles > 0:
         events = [e for e in events if article_counts.get(e.id, 0) >= min_articles]
         if not events:
             return []
@@ -88,6 +98,7 @@ async def list_events(
             created_at=ev.created_at,
             last_article_at=ev.last_article_at,
             archived_at=ev.archived_at,
+            expires_at=ev.expires_at,
             summary_version=ev.summary_version or 0,
             article_count=article_counts.get(ev.id, 0),
             unread_count=unread_counts.get(ev.id, 0),
@@ -100,6 +111,7 @@ async def list_events(
     result.sort(
         key=lambda r: (
             -(r.article_count or 0),
+            -(r.created_at.timestamp() if r.created_at else 0),
             -(r.last_article_at.timestamp() if r.last_article_at else 0),
         )
     )
@@ -123,7 +135,8 @@ async def create_event(
     return EventResponse(
         id=event.id, name=event.name, description=event.description, status=event.status,
         created_at=event.created_at, last_article_at=event.last_article_at,
-        archived_at=event.archived_at, summary_version=event.summary_version or 0,
+        archived_at=event.archived_at, expires_at=event.expires_at,
+        summary_version=event.summary_version or 0,
         article_count=0, feed_count=0, importance_avg=0.0,
     )
 
@@ -161,6 +174,14 @@ async def get_event(
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = verify_event_exists(db, event_id)
+    try:
+        from ..grouping.lifecycle import reap_expired_in_list
+        reap_expired_in_list(db, [event_id])
+        db.commit()
+        db.refresh(event)
+    except Exception as e:
+        logger.warning(f"Lazy reap failed in get_event {event_id}: {e}", exc_info=True)
+        db.rollback()
     articles = (
         db.query(Article)
         .filter(Article.event_id == event_id)
@@ -202,7 +223,8 @@ async def get_event(
     return EventDetailResponse(
         id=event.id, name=event.name, description=event.description, status=event.status,
         created_at=event.created_at, last_article_at=event.last_article_at,
-        archived_at=event.archived_at, articles=article_payloads,
+        archived_at=event.archived_at, expires_at=event.expires_at,
+        articles=article_payloads,
         latest_summary=summary_data, summary_version=event.summary_version or 0,
     )
 
@@ -237,7 +259,8 @@ async def update_event(
     return EventResponse(
         id=event.id, name=event.name, description=event.description, status=event.status,
         created_at=event.created_at, last_article_at=event.last_article_at,
-        archived_at=event.archived_at, summary_version=event.summary_version or 0,
+        archived_at=event.archived_at, expires_at=event.expires_at,
+        summary_version=event.summary_version or 0,
         article_count=article_count, feed_count=0, importance_avg=0.0,
     )
 
@@ -280,6 +303,8 @@ async def add_article_to_event(
         event.last_article_at = article.published_date or datetime.now(timezone.utc)
     event.status = "active"
     event.archived_at = None
+    from ..grouping.lifecycle import extend_expiry_on_event
+    extend_expiry_on_event(event, article.importance_score)
     record_correction(
         article_id=article_id,
         kind="move",
@@ -414,7 +439,12 @@ async def move_article(
         raise HTTPException(status_code=400, detail="Article is not in this event")
     target_id = body.target_event_id
     if body.new_event_name and not target_id:
-        new_ev = Event(name=body.new_event_name.strip(), status="active")
+        from ..grouping.lifecycle import initial_expiry
+        new_ev = Event(
+            name=body.new_event_name.strip(),
+            status="active",
+            expires_at=initial_expiry(importance_score=article.importance_score),
+        )
         db.add(new_ev)
         db.flush()
         target_id = new_ev.id
@@ -433,6 +463,11 @@ async def move_article(
     )
     article.event_id = target_id
     article.grouped_at = datetime.now(timezone.utc)
+    if target_id:
+        from ..grouping.lifecycle import extend_expiry_on_event
+        target_ev = db.query(Event).filter(Event.id == target_id).first()
+        if target_ev is not None:
+            extend_expiry_on_event(target_ev, article.importance_score)
     try:
         db.commit()
     except Exception as e:
@@ -444,7 +479,8 @@ async def move_article(
     return EventResponse(
         id=target_ev.id, name=target_ev.name, description=target_ev.description, status=target_ev.status,
         created_at=target_ev.created_at, last_article_at=target_ev.last_article_at,
-        archived_at=target_ev.archived_at, summary_version=target_ev.summary_version or 0,
+        archived_at=target_ev.archived_at, expires_at=target_ev.expires_at,
+        summary_version=target_ev.summary_version or 0,
         article_count=article_count, feed_count=0, importance_avg=0.0,
     )
 
@@ -492,6 +528,21 @@ async def split_event(
     new_ev = Event(name=body.new_event_name.strip(), status="active")
     db.add(new_ev)
     db.flush()
+    from ..grouping.lifecycle import initial_expiry, extend_expiry_on_event
+    split_articles = (
+        db.query(Article)
+        .filter(Article.id.in_(body.article_ids), Article.event_id == event_id)
+        .all()
+    )
+    for art in split_articles:
+        extend_expiry_on_event(new_ev, art.importance_score)
+    if split_articles:
+        new_ev.last_article_at = max(
+            (a.published_date for a in split_articles if a.published_date),
+            default=None,
+        ) or datetime.now(timezone.utc)
+    if new_ev.expires_at is None:
+        new_ev.expires_at = initial_expiry(importance_score=None)
     db.query(Article).filter(Article.id.in_(body.article_ids), Article.event_id == event_id).update(
         {Article.event_id: new_ev.id}, synchronize_session=False
     )
@@ -511,7 +562,8 @@ async def split_event(
     return EventResponse(
         id=new_ev.id, name=new_ev.name, description=new_ev.description, status=new_ev.status,
         created_at=new_ev.created_at, last_article_at=new_ev.last_article_at,
-        archived_at=new_ev.archived_at, summary_version=new_ev.summary_version or 0,
+        archived_at=new_ev.archived_at, expires_at=new_ev.expires_at,
+        summary_version=new_ev.summary_version or 0,
         article_count=article_count, feed_count=0, importance_avg=0.0,
     )
 

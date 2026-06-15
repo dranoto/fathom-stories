@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-from sqlalchemy import desc, or_, func
+from sqlalchemy import desc, or_, func, and_
 
 from ..database import db_session_scope
 from ..database.models import Article, Event
@@ -15,8 +15,77 @@ from .. import config as app_config
 from .prompts import build_group_assign_prompt, build_few_shot_block, build_regroup_prompt
 from .feedback import build_few_shot_examples
 from .content_classifier import classify_title
+from .lifecycle import extend_expiry_on_event, initial_expiry
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_event_name(name: str) -> str:
+    if not name:
+        return ""
+    return " ".join(name.strip().lower().split())
+
+
+def find_or_create_event(
+    db,
+    name: str,
+    now: datetime,
+    importance_score: Optional[float] = None,
+    anchor: Optional[datetime] = None,
+) -> Tuple[Event, str]:
+    """
+    Reuse an existing event with the same normalized name, or create a new one.
+
+    Match scope: active + cooling + archived within ARCHIVE_REVIVE_WINDOW_DAYS.
+    Reuse order: oldest created_at first (so we never lose history).
+
+    Returns (event, outcome) where outcome is one of:
+      "created"  — a brand new Event row was created
+      "reused"   — matched an existing active/cooling event
+      "revived"  — matched an archived event within the revival window; it is now active
+    """
+    normalized = _normalize_event_name(name)
+    if normalized:
+        revival_cutoff = now - timedelta(days=app_config.ARCHIVE_REVIVE_WINDOW_DAYS)
+        existing = (
+            db.query(Event)
+            .filter(func.lower(Event.name) == normalized)
+            .filter(
+                or_(
+                    Event.status.in_(("active", "cooling")),
+                    and_(
+                        Event.status == "archived",
+                        Event.archived_at.isnot(None),
+                        Event.archived_at >= revival_cutoff,
+                    ),
+                )
+            )
+            .order_by(Event.created_at.asc(), Event.id.asc())
+            .first()
+        )
+        if existing:
+            outcome = "revived" if existing.status == "archived" else "reused"
+            if existing.status == "archived":
+                existing.status = "active"
+                existing.archived_at = None
+            if anchor:
+                anchor_aware = anchor if anchor.tzinfo else anchor.replace(tzinfo=timezone.utc)
+                existing_la = existing.last_article_at
+                if existing_la is not None and existing_la.tzinfo is None:
+                    existing_la = existing_la.replace(tzinfo=timezone.utc)
+                if not existing_la or anchor_aware > existing_la:
+                    existing.last_article_at = anchor
+            return existing, outcome
+
+    new_event = Event(
+        name=name.strip(),
+        status="active",
+        last_article_at=anchor or now,
+        expires_at=initial_expiry(anchor=anchor, importance_score=importance_score, now=now),
+    )
+    db.add(new_event)
+    db.flush()
+    return new_event, "created"
 
 
 def _parse_response(content: str) -> Dict[str, Any]:
@@ -95,6 +164,7 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
     counts = {
         "existing": 0,
         "new": 0,
+        "reused": 0,
         "uncategorized": 0,
         "errors": 0,
     }
@@ -119,13 +189,15 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                         continue
                     article.event_id = event.id
                     article.proposed_event_name = None
-                    article.importance_score = float(a.get("importance_score") or 0.5)
+                    importance = float(a.get("importance_score") or 0.5)
+                    article.importance_score = importance
                     article.grouping_confidence = float(a.get("confidence") or 0.0)
                     article.grouped_at = now
                     if not event.last_article_at or (article.published_date and article.published_date > event.last_article_at):
                         event.last_article_at = article.published_date or now
                     event.status = "active"
                     event.archived_at = None
+                    extend_expiry_on_event(event, importance, now=now)
                     event_increments[event.id].append(article_id)
                     counts["existing"] += 1
                 elif decision == "new":
@@ -133,20 +205,24 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                     if not name:
                         counts["errors"] += 1
                         continue
-                    new_event = Event(
-                        name=name,
-                        description=None,
-                        status="active",
-                        last_article_at=article.published_date or now,
+                    importance = float(a.get("importance_score") or 0.5)
+                    new_event, outcome = find_or_create_event(
+                        db,
+                        name,
+                        now=now,
+                        importance_score=importance,
+                        anchor=article.published_date or now,
                     )
-                    db.add(new_event)
-                    db.flush()
                     article.event_id = new_event.id
                     article.proposed_event_name = None
-                    article.importance_score = float(a.get("importance_score") or 0.5)
+                    article.importance_score = importance
                     article.grouping_confidence = float(a.get("confidence") or 0.0)
                     article.grouped_at = now
-                    counts["new"] += 1
+                    if outcome == "created":
+                        counts["new"] += 1
+                    else:
+                        counts[outcome] += 1
+                        extend_expiry_on_event(new_event, importance, now=now)
                 elif decision == "uncategorized":
                     counts["uncategorized"] += 1
                     article.grouped_at = now
@@ -262,6 +338,14 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
         except Exception as e:
             logger.error(f"Auto-incremental summary failed for event {event_id}: {e}", exc_info=True)
 
+    dedup_counts: Dict[str, int] = {}
+    try:
+        from .dedup import dedup_events
+        dedup_counts = await dedup_events(llm)
+    except Exception as e:
+        logger.error(f"REGROUP: dedup pass failed: {e}", exc_info=True)
+
+    counts["dedup"] = dedup_counts
     return counts
 
 
@@ -274,6 +358,8 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
     counts = {
         "existing": 0,
         "new_events": 0,
+        "revived": 0,
+        "reused": 0,
         "new_singletons": 0,
         "uncategorized": 0,
         "errors": 0,
@@ -311,13 +397,15 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                         continue
                     article.event_id = event.id
                     article.proposed_event_name = None
-                    article.importance_score = float(a.get("importance_score") or 0.5)
+                    importance = float(a.get("importance_score") or 0.5)
+                    article.importance_score = importance
                     article.grouping_confidence = float(a.get("confidence") or 0.0)
                     article.grouped_at = now
                     if not event.last_article_at or (article.published_date and article.published_date > event.last_article_at):
                         event.last_article_at = article.published_date or now
                     event.status = "active"
                     event.archived_at = None
+                    extend_expiry_on_event(event, importance, now=now)
                     event_increments[event.id].append(article_id)
                     counts["existing"] += 1
                 elif decision == "uncategorized":
@@ -338,27 +426,33 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                 if not first_article:
                     counts["errors"] += 1
                     continue
-                new_event = Event(
-                    name=name,
-                    status="active",
-                    last_article_at=first_article.published_date or now,
+                first_importance = float(first.get("importance_score") or 0.5)
+                new_event, outcome = find_or_create_event(
+                    db,
+                    name,
+                    now=now,
+                    importance_score=first_importance,
+                    anchor=first_article.published_date or now,
                 )
-                db.add(new_event)
-                db.flush()
-                new_event_ids.append(new_event.id)
+                if outcome == "created":
+                    new_event_ids.append(new_event.id)
+                    counts["new_events"] += 1
+                else:
+                    counts[outcome] += 1
                 for item in items:
                     art = db.query(Article).filter(Article.id == item.get("article_id")).first()
                     if not art:
                         continue
                     art.event_id = new_event.id
                     art.proposed_event_name = None
-                    art.importance_score = float(item.get("importance_score") or 0.5)
+                    importance = float(item.get("importance_score") or 0.5)
+                    art.importance_score = importance
                     art.grouping_confidence = float(item.get("confidence") or 0.0)
                     art.grouped_at = now
                     if not new_event.last_article_at or (art.published_date and art.published_date > new_event.last_article_at):
                         new_event.last_article_at = art.published_date or now
+                    extend_expiry_on_event(new_event, importance, now=now)
                     event_increments[new_event.id].append(art.id)
-                counts["new_events"] += 1
             else:
                 for item in items:
                     art = db.query(Article).filter(Article.id == item.get("article_id")).first()

@@ -1,6 +1,7 @@
 # app/cli.py
 import argparse
 import asyncio
+import json
 import logging
 import sys
 import uvicorn
@@ -61,6 +62,35 @@ def cmd_migrate_visitor_id(_args):
         conn.execute(text("DROP TABLE article_reads"))
     Base.metadata.create_all(bind=engine, tables=[ArticleRead.__table__])
     print(f"Dropped {existing_count} existing read rows and recreated article_reads with visitor_id.")
+
+
+def cmd_backfill_expiry(_args):
+    from sqlalchemy import inspect, text
+    from .database.models import Event
+    from .database import engine
+    from datetime import datetime, timezone
+
+    insp = inspect(engine)
+    if "events" not in insp.get_table_names():
+        print("events table does not exist; run init-db first.")
+        return
+    cols = {c["name"] for c in insp.get_columns("events")}
+    if "expires_at" not in cols:
+        print("events.expires_at column does not exist; run init-db first.")
+        return
+    with db_session_scope() as db:
+        targets = db.query(Event).filter(Event.expires_at.is_(None)).all()
+        if not targets:
+            print("No events with NULL expires_at; nothing to do.")
+            return
+        from .grouping.lifecycle import initial_expiry
+        now = datetime.now(timezone.utc)
+        n = 0
+        for ev in targets:
+            anchor = ev.last_article_at or ev.created_at or now
+            ev.expires_at = initial_expiry(anchor=anchor, importance_score=None, now=now)
+            n += 1
+    print(f"Backfilled expires_at on {n} events.")
 
 
 def cmd_seed_feeds(_args):
@@ -230,18 +260,135 @@ def cmd_stats(_args):
     create_db_and_tables()
     from .database.models import Event, Article, ReclusterProposal, GroupingFeedback
     from sqlalchemy import func
+    from datetime import datetime, timezone, timedelta
     with db_session_scope() as db:
         total_articles = db.query(func.count(Article.id)).scalar() or 0
         ungrouped = db.query(func.count(Article.id)).filter(Article.event_id.is_(None)).scalar() or 0
         active = db.query(func.count(Event.id)).filter(Event.status == "active").scalar() or 0
         cooling = db.query(func.count(Event.id)).filter(Event.status == "cooling").scalar() or 0
         archived = db.query(func.count(Event.id)).filter(Event.status == "archived").scalar() or 0
+        recent_archived = db.query(func.count(Event.id)).filter(
+            Event.status == "archived",
+            Event.archived_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+        ).scalar() or 0
         pending = db.query(func.count(ReclusterProposal.id)).filter(ReclusterProposal.applied == 0).scalar() or 0
         feedback = db.query(func.count(GroupingFeedback.id)).scalar() or 0
     print(f"Articles: {total_articles} total, {ungrouped} ungrouped")
-    print(f"Events: {active} active, {cooling} cooling, {archived} archived")
+    print(f"Events: {active} active, {cooling} cooling, {archived} archived ({recent_archived} archived in last 24h)")
     print(f"Proposals pending: {pending}")
     print(f"Feedback rows: {feedback}")
+
+
+def cmd_test_extraction(args):
+    import asyncio
+    from .extraction_tests import test_feed, print_verdict
+
+    urls = list(args.url) if args.url else []
+    if not urls and app_config.RSS_FEED_URLS:
+        urls = list(app_config.RSS_FEED_URLS)
+    if not urls:
+        print("No feed URLs provided. Pass --url one or more times, or set RSS_FEED_URLS in .env.")
+        sys.exit(2)
+    if args.url_file:
+        try:
+            with open(args.url_file, "r", encoding="utf-8") as fh:
+                extra = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+                urls.extend(extra)
+        except OSError as e:
+            print(f"Failed to read URL file {args.url_file}: {e}")
+            sys.exit(2)
+
+    async def runner():
+        results = []
+        for u in urls:
+            print(f"Testing feed: {u}")
+            verdict = await test_feed(u, sample_size=args.sample, min_words=args.min_words)
+            results.append(verdict)
+        return results
+
+    results = asyncio.run(runner())
+    for v in results:
+        print_verdict(v)
+    fails = [v for v in results if not v.overall_pass]
+    if args.json_out:
+        with open(args.json_out, "w", encoding="utf-8") as fh:
+            json.dump([v.as_dict() for v in results], fh, indent=2, default=str)
+        print(f"\nWrote JSON verdict to {args.json_out}")
+    if fails:
+        print(f"\n{fails} feed(s) failed overall gates.")
+        sys.exit(1)
+    print(f"\nAll {len(results)} feed(s) passed overall.")
+
+
+def cmd_dedup_events(args):
+    from sqlalchemy import func
+    from .database.models import Event
+    from .grouping.engine import _normalize_event_name
+
+    with db_session_scope() as db:
+        events = (
+            db.query(Event)
+            .filter(Event.status.in_(("active", "cooling", "archived")))
+            .all()
+        )
+        groups: dict = {}
+        for ev in events:
+            norm = _normalize_event_name(ev.name)
+            if not norm:
+                continue
+            groups.setdefault(norm, []).append(ev)
+
+        actions = []
+        for norm, evs in groups.items():
+            if len(evs) < 2:
+                continue
+            evs_sorted = sorted(
+                evs,
+                key=lambda e: (
+                    -sum(1 for a in (e.articles or []) if a.event_id == e.id),
+                    e.created_at,
+                ),
+            )
+            primary = evs_sorted[0]
+            for secondary in evs_sorted[1:]:
+                n_articles = sum(1 for a in (secondary.articles or []) if a.event_id == secondary.id)
+                if n_articles == 0:
+                    actions.append(("delete_empty_phantom", primary, secondary, 0))
+                else:
+                    actions.append(("merge", primary, secondary, n_articles))
+
+    if not actions:
+        print("No duplicate-name groups found.")
+        return
+
+    print(f"Found {len(actions)} action(s):")
+    for kind, primary, secondary, n in actions:
+        if kind == "delete_empty_phantom":
+            print(f"  DELETE empty phantom: id={secondary.id} name={secondary.name!r} (0 articles)")
+        else:
+            print(f"  MERGE: id={secondary.id} ({n} articles) -> id={primary.id} ({primary.name!r})")
+
+    if not args.apply:
+        print("\nDry-run only. Re-run with --apply to commit.")
+        return
+
+    from .grouping.dedup import merge_events
+    applied = 0
+    with db_session_scope() as db:
+        for kind, primary, secondary, n in actions:
+            if kind == "delete_empty_phantom":
+                db.query(Event).filter(Event.id == secondary.id).delete(synchronize_session=False)
+                applied += 1
+            else:
+                if merge_events(db, primary.id, secondary.id, kind="cli_dedup"):
+                    applied += 1
+    print(f"\nApplied {applied} action(s).")
+
+
+def cmd_purge_archive(args):
+    create_db_and_tables()
+    n = lifecycle_module.purge_ancient_archives(limit=args.limit)
+    print(f"Purge result: {n} archived events deleted (older than {app_config.PURGE_ARCHIVE_AFTER_DAYS}d)")
 
 
 def cmd_serve(args):
@@ -262,6 +409,7 @@ def main():
 
     sub.add_parser("init-db", help="Create database tables").set_defaults(func=cmd_init_db)
     sub.add_parser("migrate-visitor-id", help="Drop & recreate article_reads with visitor_id column (per-browser read state)").set_defaults(func=cmd_migrate_visitor_id)
+    sub.add_parser("backfill-expiry", help="One-shot: set expires_at on events with NULL expires_at").set_defaults(func=cmd_backfill_expiry)
     sub.add_parser("seed-feeds", help="Add feeds from .env RSS_FEED_URLS").set_defaults(func=cmd_seed_feeds)
     sub.add_parser("cleanup-bad", help="Delete articles with scraping errors or below MIN_ARTICLE_WORD_COUNT").set_defaults(func=cmd_cleanup_bad)
     sub.add_parser("fetch", help="One-shot RSS fetch + scrape").set_defaults(func=cmd_fetch)
@@ -275,6 +423,21 @@ def main():
     p_summarize.add_argument("event_id", type=int)
     p_summarize.set_defaults(func=cmd_summarize)
     sub.add_parser("stats", help="Show counts").set_defaults(func=cmd_stats)
+    p_purge = sub.add_parser("purge-archive", help="One-shot: delete archived events older than PURGE_ARCHIVE_AFTER_DAYS")
+    p_purge.add_argument("--limit", type=int, default=app_config.PURGE_BATCH_LIMIT, help="Max events to delete in this run (default: PURGE_BATCH_LIMIT)")
+    p_purge.set_defaults(func=cmd_purge_archive)
+
+    p_dedup = sub.add_parser("dedup-events", help="One-shot: find duplicate-name event groups and merge/delete. Dry-run by default.")
+    p_dedup.add_argument("--apply", action="store_true", help="Commit the proposed dedup actions (default: dry-run)")
+    p_dedup.set_defaults(func=cmd_dedup_events)
+
+    p_test = sub.add_parser("test-extraction", help="Run extraction tests on candidate RSS feed URL(s)")
+    p_test.add_argument("--url", action="append", help="Feed URL to test (repeatable). Defaults to RSS_FEED_URLS from .env.")
+    p_test.add_argument("--url-file", help="Path to a file with one feed URL per line")
+    p_test.add_argument("--sample", type=int, default=5, help="Number of entries to sample per feed (default: 5)")
+    p_test.add_argument("--min-words", type=int, default=app_config.MIN_ARTICLE_WORD_COUNT, help="Minimum scraped word count to count as 'full text extracted' (default: MIN_ARTICLE_WORD_COUNT)")
+    p_test.add_argument("--json-out", help="If set, write the full verdict list to this file as JSON")
+    p_test.set_defaults(func=cmd_test_extraction)
 
     p_serve = sub.add_parser("serve", help="Run main API (with scheduler)")
     p_serve.add_argument("--host", default="0.0.0.0")

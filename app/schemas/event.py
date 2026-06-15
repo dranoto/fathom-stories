@@ -37,6 +37,7 @@ class EventResponse(BaseModel):
     created_at: datetime
     last_article_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
     summary_version: Optional[int] = 0
     article_count: Optional[int] = 0
     unread_count: Optional[int] = 0
@@ -72,6 +73,7 @@ class EventDetailResponse(BaseModel):
     created_at: datetime
     last_article_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
     articles: List[ArticleInEvent]
     latest_summary: Optional[EventSummaryData] = None
     summary_version: Optional[int] = 0

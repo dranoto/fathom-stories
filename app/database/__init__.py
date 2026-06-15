@@ -34,6 +34,19 @@ def create_db_and_tables() -> None:
                 conn.execute(text("ALTER TABLE articles ADD COLUMN proposed_event_name VARCHAR"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_articles_proposed_event_name ON articles (proposed_event_name)"))
             logger.info("Migrated: added articles.proposed_event_name")
+    if "events" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("events")}
+        if "expires_at" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE events ADD COLUMN expires_at DATETIME"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_expires_at ON events (expires_at)"))
+                conn.execute(text(
+                    "UPDATE events SET expires_at = "
+                    "CASE WHEN last_article_at IS NOT NULL THEN datetime(last_article_at, '+24 hours') "
+                    "ELSE datetime(created_at, '+24 hours') END "
+                    "WHERE expires_at IS NULL"
+                ))
+            logger.info("Migrated: added events.expires_at with backfill (last_article_at or created_at + 24h)")
     if "article_reads" in insp.get_table_names():
         read_cols = {c["name"] for c in insp.get_columns("article_reads")}
         if "visitor_id" not in read_cols:
