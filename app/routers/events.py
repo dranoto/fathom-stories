@@ -384,6 +384,7 @@ async def add_article_to_event(
 async def remove_article_from_event(
     event_id: int,
     article_id: int,
+    request: Request,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = verify_event_exists(db, event_id)
@@ -417,11 +418,24 @@ async def remove_article_from_event(
         db.rollback()
         logger.error(f"Error removing article from event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to remove article")
+
+    summary_regenerated = False
+    if not disbanded:
+        try:
+            llm = get_llm_summary(request)
+            from ..grouping.summary_service import regenerate_summary_for_event
+            summary_regenerated = await regenerate_summary_for_event(event_id, llm)
+        except HTTPException:
+            pass
+        except Exception as e:
+            logger.error(f"Auto-summary after manual remove failed: {e}", exc_info=True)
+
     return {
         "message": "Article removed" + (" and event disbanded" if disbanded else ""),
         "disbanded": disbanded,
         "article_id": article_id,
         "event_id": event_id,
+        "summary_regenerated": summary_regenerated,
     }
 
 

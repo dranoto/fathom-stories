@@ -8,6 +8,7 @@ let ungroupedArticles = [];
 let inboxTotal = 0;
 let inboxUnread = 0;
 let inboxRead = 0;
+let currentArticleId = null;
 
 export function getEvents() { return events; }
 export function setEvents(v) { events = v; }
@@ -29,6 +30,14 @@ export function setInboxCounts(total, read, unread) {
   inboxTotal = total;
   inboxRead = read;
   inboxUnread = unread;
+}
+export function getCurrentArticleId() { return currentArticleId; }
+export function setCurrentArticleId(id) {
+  if (currentArticleId === id) return;
+  currentArticleId = id;
+  window.dispatchEvent(new CustomEvent("current-article-changed", {
+    detail: { articleId: id },
+  }));
 }
 
 export function patchEventUnreadCount(articleId, eventId, isRead) {

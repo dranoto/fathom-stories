@@ -135,3 +135,38 @@ async def generate_incremental_summary_for_event(
         f"Incremental summary saved for event {event_id} ({event_name}) — {len(new_article_ids)} new article(s)"
     )
     return True
+
+
+async def regenerate_summary_for_event(event_id: int, llm) -> bool:
+    prior = _latest_prior_summary(event_id)
+    with db_session_scope() as db:
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            return False
+        event_name = event.name
+        articles = (
+            db.query(Article)
+            .filter(Article.event_id == event_id)
+            .order_by(desc(Article.published_date))
+            .all()
+        )
+        article_ids = [a.id for a in articles]
+        payload = _articles_to_payload(articles)
+    if not articles:
+        return False
+    try:
+        summary_data = await generate_major_summary(
+            event_name=event_name,
+            articles=payload,
+            prompt_template=app_config.DEFAULT_MAJOR_SUMMARY_PROMPT,
+            prior_summary_json=prior,
+            llm=llm,
+        )
+    except Exception as e:
+        logger.error(f"Regenerate summary failed for event {event_id}: {e}", exc_info=True)
+        return False
+    _save_summary(event_id, summary_data, article_ids, app_config.DEFAULT_SUMMARY_MODEL_NAME)
+    logger.info(
+        f"Regenerate summary saved for event {event_id} ({event_name}) — {len(article_ids)} article(s)"
+    )
+    return True

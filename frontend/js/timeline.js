@@ -1,7 +1,16 @@
 // frontend/js/timeline.js
-import { getActiveEventDetail, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts } from "./state.js";
+import { getActiveEventDetail, getCurrentArticleId, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts } from "./state.js";
 import { getEvent, listUngroupedArticles, runRegroup } from "./apiService.js";
 import { renderEventTabs, escapeHtml as tabsEscape } from "./eventTabs.js";
+
+window.addEventListener("current-article-changed", (e) => {
+  const id = e.detail && e.detail.articleId;
+  document.querySelectorAll(".bubble.current-article").forEach(el => el.classList.remove("current-article"));
+  if (id != null) {
+    const target = document.querySelector(`.bubble[data-article-id="${id}"]`);
+    if (target) target.classList.add("current-article");
+  }
+});
 
 export async function renderActiveEventPane(eventId) {
   const pane = document.getElementById("event-pane");
@@ -78,10 +87,11 @@ function renderBubble(a) {
   const sizeClass = isLarge ? "size-lg" : isSmall ? "size-sm" : "size-md";
   const readClass = isRead(a.id) ? "read" : "";
   const uncertain = (a.grouping_confidence || 0) < 0.5 ? "uncertain" : "";
+  const currentClass = getCurrentArticleId() === a.id ? "current-article" : "";
   const ts = a.published_date ? formatRelative(new Date(a.published_date)) : "?";
   return `<div class="timeline-row">
     <div class="ts">${escapeHtml(ts)}</div>
-    <div class="bubble ${sizeClass} ${readClass} ${uncertain}" data-article-id="${a.id}">
+    <div class="bubble ${sizeClass} ${readClass} ${uncertain} ${currentClass}" data-article-id="${a.id}">
       <div class="bubble-title">${escapeHtml(a.title || "(untitled)")}</div>
       <div class="bubble-meta">
         <span class="imp" title="importance ${(a.importance_score || 0).toFixed(2)}"></span>
@@ -208,11 +218,12 @@ export async function renderInboxPane() {
       const uncertain = (a.grouping_confidence || 0) < 0.5 ? "uncertain" : "";
       const importance = a.importance_score || 0;
       const sizeClass = importance >= 0.7 ? "size-lg" : importance < 0.3 ? "size-sm" : "size-md";
+      const currentClass = getCurrentArticleId() === a.id ? "current-article" : "";
       const proposed = a.proposed_event_name ? `<span class="proposed">${escapeHtml(a.proposed_event_name)}</span>` : "";
       const ts = a.published_date ? formatRelative(new Date(a.published_date)) : "?";
       return `<div class="timeline-row">
         <div class="ts">${escapeHtml(ts)}</div>
-        <div class="bubble ${sizeClass} ${readClass} ${uncertain}" data-article-id="${a.id}">
+        <div class="bubble ${sizeClass} ${readClass} ${uncertain} ${currentClass}" data-article-id="${a.id}">
           <div class="bubble-title">${escapeHtml(a.title || "(untitled)")}</div>
           <div class="bubble-meta">
             <span class="imp" title="importance ${importance.toFixed(2)}"></span>

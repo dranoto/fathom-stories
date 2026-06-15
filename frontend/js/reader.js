@@ -7,6 +7,7 @@ import {
   patchEventUnreadCount,
   dispatchReadStateChanged,
   dispatchReaderClosed,
+  setCurrentArticleId,
 } from "./state.js";
 
 let currentArticle = null;
@@ -151,6 +152,7 @@ async function openArticle(id) {
   currentArticle = article;
   currentSummary = null;
   currentEventId = null;
+  setCurrentArticleId(article.id);
 
   source.textContent = `${article.publisher_name || ""} · ${article.published_date ? new Date(article.published_date).toLocaleString() : ""}`;
   orig.href = article.url;
@@ -222,10 +224,8 @@ async function renderEventPicker(article) {
         }
         btn.textContent = "Done ✓";
         if (!res.already_in) {
-          setTimeout(() => {
-            window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: evId } }));
-            window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: article.id } }));
-          }, 800);
+          window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: evId } }));
+          window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: article.id } }));
         }
       } catch (e) {
         status.textContent = "Error: " + e.message;
@@ -263,12 +263,11 @@ function setupRemoveButton(article) {
           articleId: article.id,
           eventId: article.event_id,
           disbanded: !!res.disbanded,
+          summary_regenerated: !!res.summary_regenerated,
         },
       }));
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: targetEventId } }));
-        window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: targetEventId } }));
-      }, 600);
+      window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: targetEventId } }));
+      window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: targetEventId } }));
     } catch (e) {
       alert("Failed: " + e.message);
       btn.disabled = false;
@@ -285,6 +284,7 @@ export function closeReader() {
   currentArticle = null;
   currentSummary = null;
   currentEventId = null;
+  setCurrentArticleId(null);
   const picker = document.getElementById("reader-event-picker");
   if (picker) picker.hidden = true;
   const removeBtn = document.getElementById("btn-remove-from-event");
@@ -310,6 +310,7 @@ async function openSummary(eventId) {
   if (removeBtn) removeBtn.hidden = true;
   currentArticle = null;
   currentEventId = eventId;
+  setCurrentArticleId(null);
 
   let event;
   try {
