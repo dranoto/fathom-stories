@@ -1,8 +1,9 @@
 # app/routers/events.py
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,7 @@ from ..security import verify_event_exists
 from ..grouping.feedback import record_correction
 from ..grouping import lifecycle as lifecycle_module
 from ..grouping import chat as chat_module
+from .. import mcp_tools
 from .. import config as app_config
 
 logger = logging.getLogger(__name__)
@@ -786,21 +788,74 @@ async def chat_about_event(
 
     model_name = app_config.DEFAULT_CHAT_MODEL_NAME
     sources_payload = [s.model_dump(mode="json") for s in sources]
+    chat_tools = mcp_tools.get_chat_tools(request.app)
+
+    delta_q: asyncio.Queue = asyncio.Queue()
+    tool_q: asyncio.Queue = asyncio.Queue()
+    error_q: asyncio.Queue = asyncio.Queue()
+
+    def _send_delta(text: str) -> None:
+        try:
+            delta_q.put_nowait({"text": text})
+        except Exception:
+            pass
+
+    def _send_tool_use(name: str, args: Dict[str, Any]) -> None:
+        try:
+            tool_q.put_nowait({"name": name, "args": args or {}})
+        except Exception:
+            pass
+
+    async def consumer() -> None:
+        try:
+            await chat_module.astream_chat_with_tools(
+                llm=llm,
+                messages=messages,
+                tools=chat_tools,
+                max_iterations=app_config.CHAT_MAX_TOOL_ITERATIONS,
+                tool_timeout_seconds=app_config.CHAT_TOOL_TIMEOUT_SECONDS,
+                on_text_delta=_send_delta,
+                on_tool_use=_send_tool_use,
+            )
+        except Exception as e:
+            logger.error(f"Chat stream error for event {event_id}: {e}", exc_info=True)
+            try:
+                error_q.put_nowait({"message": str(e)})
+            except Exception:
+                pass
 
     async def event_stream():
         yield chat_module.serialize_sse("meta", {
             "event_id": event_id,
             "model_used": model_name,
             "sources": sources_payload,
+            "tools_available": [getattr(t, "name", "?") for t in chat_tools],
         })
+        task = asyncio.create_task(consumer())
         try:
-            async for delta in chat_module.astream_chat_answer(llm, messages):
-                if delta:
-                    yield chat_module.serialize_sse("delta", {"text": delta})
-        except Exception as e:
-            logger.error(f"Chat stream error for event {event_id}: {e}", exc_info=True)
-            yield chat_module.serialize_sse("error", {"message": str(e)})
-            return
+            while True:
+                try:
+                    payload = await asyncio.wait_for(delta_q.get(), timeout=0.05)
+                    yield chat_module.serialize_sse("delta", payload)
+                    continue
+                except asyncio.TimeoutError:
+                    pass
+                try:
+                    while True:
+                        payload = tool_q.get_nowait()
+                        yield chat_module.serialize_sse("tool_use", payload)
+                except asyncio.QueueEmpty:
+                    pass
+                if not error_q.empty():
+                    err = error_q.get_nowait()
+                    yield chat_module.serialize_sse("error", err)
+                    break
+                if task.done() and delta_q.empty() and tool_q.empty() and error_q.empty():
+                    break
+                await asyncio.sleep(0)
+        finally:
+            if not task.done():
+                task.cancel()
         yield chat_module.serialize_sse("done", {"event_id": event_id})
 
     return StreamingResponse(

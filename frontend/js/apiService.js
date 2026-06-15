@@ -129,7 +129,7 @@ export async function persistEventChatTurn(eventId, payload) {
   });
 }
 
-export function streamEventChat(eventId, payload, { onMeta, onDelta, onError, onDone, signal } = {}) {
+export function streamEventChat(eventId, payload, { onMeta, onDelta, onToolUse, onError, onDone, signal } = {}) {
   const url = `/api/events/${eventId}/chat`;
   return fetch(url, {
     method: "POST",
@@ -171,6 +171,7 @@ export function streamEventChat(eventId, payload, { onMeta, onDelta, onError, on
         try { parsed = JSON.parse(dataStr); } catch { parsed = dataStr; }
         if (currentEvent === "meta" && onMeta) onMeta(parsed);
         else if (currentEvent === "delta" && onDelta && parsed && typeof parsed.text === "string") onDelta(parsed.text);
+        else if (currentEvent === "tool_use" && onToolUse && parsed && typeof parsed.name === "string") onToolUse(parsed.name, parsed.args || {});
         else if (currentEvent === "error") {
           const err = new Error((parsed && parsed.message) || "stream error");
           if (onError) onError(err);

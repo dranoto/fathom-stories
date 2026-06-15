@@ -22,6 +22,7 @@ from .routers import grouping as grouping_router
 from .routers import feeds as feeds_router
 from .routers import visits as visits_router
 from .middleware.visitor import VisitorCookieMiddleware
+from . import mcp_tools
 from . import tasks
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI):
     database.create_db_and_tables()
     tasks.seed_feeds_from_env()
     _init_llms(app)
+    await mcp_tools.init_mcp_tools(app)
 
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     app.state.scheduler = scheduler
@@ -117,6 +119,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
     except Exception:
         pass
+    await mcp_tools.shutdown_mcp_tools(app)
     logger.info("MAIN_API: shutdown complete")
 
 
