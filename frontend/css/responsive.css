@@ -233,9 +233,6 @@ body {
 .reader-body .reader-content {
   font-size: calc(14px * var(--font-scale));
   line-height: 1.65;
-  max-width: 68ch;
-  margin-left: auto;
-  margin-right: auto;
 }
 .reader-body .reader-content p { margin-bottom: 14px; }
 .reader-body .reader-content h2 { font-size: 1.25em; font-weight: 600; margin-top: 1.6em; margin-bottom: 0.5em; line-height: 1.3; }
