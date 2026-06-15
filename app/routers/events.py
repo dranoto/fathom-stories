@@ -89,6 +89,34 @@ async def list_events(
         .all()
     )
 
+    from ..database.models import EventVisit
+    from datetime import datetime, timezone
+    visit_rows = (
+        db.query(EventVisit.event_id, EventVisit.last_visited_at)
+        .filter(EventVisit.visitor_id == visitor_id, EventVisit.event_id.in_(event_ids))
+        .all()
+    )
+    visits_by_event = {row[0]: row[1] for row in visit_rows}
+    new_since_visit: dict = {}
+    for ev in events:
+        last_visit = visits_by_event.get(ev.id)
+        if last_visit is None:
+            new_since_visit[ev.id] = article_counts.get(ev.id, 0)
+        else:
+            compare_at = last_visit
+            if compare_at.tzinfo is not None:
+                compare_at = compare_at.replace(tzinfo=None)
+            n = (
+                db.query(func.count(Article.id))
+                .filter(
+                    Article.event_id == ev.id,
+                    Article.fetched_at > compare_at,
+                )
+                .scalar()
+                or 0
+            )
+            new_since_visit[ev.id] = int(n)
+
     result = [
         EventResponse(
             id=ev.id,
@@ -105,6 +133,7 @@ async def list_events(
             read_count=max(0, article_counts.get(ev.id, 0) - unread_counts.get(ev.id, 0)),
             feed_count=feed_counts.get(ev.id, 0),
             importance_avg=float(importance_avgs.get(ev.id) or 0.0),
+            new_since_visit=new_since_visit.get(ev.id, 0),
         )
         for ev in events
     ]

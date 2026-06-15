@@ -163,7 +163,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  padding-right: 14px;
+  padding-right: 36px;
 }
 .event-tab.active .name { color: #0f1419; }
 .event-tab .meta {
@@ -185,6 +185,26 @@ body {
   background: var(--accent);
 }
 .event-tab.active .unread-dot { background: #0f1419; }
+.event-tab .new-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  background: var(--accent);
+  color: #0f1419;
+}
+.event-tab .unread-dot + .new-badge {
+  top: 6px;
+  right: 6px;
+}
+.event-tab.active .new-badge {
+  background: #0f1419;
+  color: var(--accent);
+}
 .event-tab .status-icon {
   font-size: 10px;
   color: var(--text-dim);

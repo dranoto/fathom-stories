@@ -20,6 +20,7 @@ from .routers import events as events_router
 from .routers import articles as articles_router
 from .routers import grouping as grouping_router
 from .routers import feeds as feeds_router
+from .routers import visits as visits_router
 from .middleware.visitor import VisitorCookieMiddleware
 from . import tasks
 
@@ -131,6 +132,7 @@ app.include_router(events_router.router)
 app.include_router(articles_router.router)
 app.include_router(grouping_router.router)
 app.include_router(feeds_router.router)
+app.include_router(visits_router.router)
 
 
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"

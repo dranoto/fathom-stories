@@ -149,6 +149,17 @@ class ArticleRead(Base):
         return f"<ArticleRead(article_id={self.article_id}, visitor_id='{self.visitor_id}', read_at={self.read_at})>"
 
 
+class EventVisit(Base):
+    __tablename__ = "event_visits"
+
+    visitor_id = Column(String(VISITOR_ID_LENGTH), primary_key=True)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete='CASCADE'), primary_key=True)
+    last_visited_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<EventVisit(visitor_id='{self.visitor_id}', event_id={self.event_id}, last_visited_at={self.last_visited_at})>"
+
+
 class ScrapeFailure(Base):
     __tablename__ = "scrape_failures"
 

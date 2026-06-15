@@ -1,6 +1,6 @@
 // frontend/script.js
 import {
-  listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles,
+  listEvents, stats, runGrouping, listReadArticleIds, listUngroupedArticles, markEventVisited,
 } from "./js/apiService.js";
 import {
   setEvents, getEvents, setActiveEventId, setReadIds, getActiveEventId,
@@ -46,6 +46,7 @@ async function onTabSelect(eventId) {
   setInboxOpen(false);
   setActiveEventId(eventId);
   closeReader();
+  markEventVisited(eventId).catch(() => {});
   renderEventTabs(onTabSelect, onInboxSelect);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);

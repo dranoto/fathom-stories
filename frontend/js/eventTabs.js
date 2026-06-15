@@ -24,17 +24,21 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
       const total = e.article_count || 0;
       const unread = e.unread_count || 0;
       const allRead = total > 0 && unread === 0;
+      const newCount = e.new_since_visit || 0;
       const metaLine = total > 0
         ? `${total} article${total === 1 ? "" : "s"}${allRead ? " · all read" : ` · ${unread} unread`}`
         : "";
       const unreadDot = unread > 0
         ? `<span class="unread-dot" title="${unread} unread"></span>`
         : "";
+      const newBadge = newCount > 0
+        ? `<span class="new-badge" title="${newCount} new since last visit">+${newCount > 99 ? "99+" : newCount}</span>`
+        : "";
       const statusIcon = e.status === "cooling"
         ? `<span class="status-icon">❄</span>`
         : "";
       return `<div class="${cls}" data-event-id="${e.id}" title="${escapeHtml(e.name)}">
-        ${unreadDot}
+        ${unreadDot}${newBadge}
         <div class="name">${statusIcon}${escapeHtml(e.name)}</div>
         ${metaLine ? `<div class="meta">${metaLine}</div>` : ""}
       </div>`;
