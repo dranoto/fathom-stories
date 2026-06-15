@@ -351,14 +351,14 @@ async function openSummary(eventId) {
     <h1>${escapeHtml(event.name)} — Event Summary</h1>
     <div class="reader-meta">v${summary.article_count || 0} articles · ${formatDate(summary.generated_at)}</div>
     <div class="reader-content">
-      ${renderTimelineNarrative(summary.timeline_narrative)}
-      ${renderCrossSourceSynthesis(summary.cross_source_synthesis)}
-      <h2>Progressive update</h2>
-      <p>${escapeHtml(summary.progressive_summary || "(none)")}</p>
       ${summary.key_developments && summary.key_developments.length ? `
         <h2>Key developments</h2>
         <ul>${summary.key_developments.map(k => `<li>${escapeHtml(k)}</li>`).join("")}</ul>
       ` : ""}
+      <h2>Progressive update</h2>
+      <p>${escapeHtml(summary.progressive_summary || "(none)")}</p>
+      ${renderTimelineNarrative(summary.timeline_narrative)}
+      ${renderCrossSourceSynthesis(summary.cross_source_synthesis)}
     </div>
   `;
   toggle.textContent = "Regenerate";
@@ -392,7 +392,7 @@ function renderTimelineNarrative(value) {
   const heading = `<h2>Timeline narrative</h2>`;
   if (Array.isArray(value)) {
     if (!value.length) return heading + `<p>(none)</p>`;
-    const entries = value.map(entry => {
+    const entries = value.slice().reverse().map(entry => {
       const date = entry && entry.date ? `<div class="timeline-date">${escapeHtml(String(entry.date))}</div>` : "";
       const text = entry && entry.text ? `<p>${escapeHtml(String(entry.text))}</p>` : "";
       return `<div class="timeline-entry">${date}${text}</div>`;
