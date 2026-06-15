@@ -154,6 +154,54 @@ CHAT_LLM_TEMPERATURE = float(os.getenv("CHAT_LLM_TEMPERATURE", "0.85"))
 CHAT_CONTEXT_MAX_ARTICLES = int(os.getenv("CHAT_CONTEXT_MAX_ARTICLES", "20"))
 CHAT_CONTEXT_PER_ARTICLE_CHARS = int(os.getenv("CHAT_CONTEXT_PER_ARTICLE_CHARS", "3000"))
 
+CHAT_MAX_TOOL_ITERATIONS = int(os.getenv("CHAT_MAX_TOOL_ITERATIONS", "4"))
+CHAT_TOOL_TIMEOUT_SECONDS = int(os.getenv("CHAT_TOOL_TIMEOUT_SECONDS", "30"))
+
+
+def _parse_mcp_servers(raw: str) -> list:
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning(f"CHAT_MCP_SERVERS is not valid JSON ({e}); ignoring.")
+        return []
+    if not isinstance(parsed, list):
+        logger.warning("CHAT_MCP_SERVERS must be a JSON list; ignoring.")
+        return []
+    cleaned = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            continue
+        url = entry.get("url")
+        if not url:
+            continue
+        transport = entry.get("transport", "streamable_http")
+        if transport not in ("streamable_http", "sse", "stdio", "websocket"):
+            logger.warning(f"Unsupported MCP transport '{transport}' for {url}; skipping.")
+            continue
+        cfg = {"transport": transport, "url": url}
+        if "headers" in entry and isinstance(entry["headers"], dict):
+            cfg["headers"] = entry["headers"]
+        if "timeout" in entry:
+            cfg["timeout"] = entry["timeout"]
+        if "name" in entry and entry["name"]:
+            name = str(entry["name"])
+        else:
+            from urllib.parse import urlparse
+            try:
+                host = urlparse(url).hostname or "mcp"
+                name = host.split(".")[0] or "mcp"
+            except Exception:
+                name = "mcp"
+        cleaned.append((name, cfg))
+    return cleaned
+
+
+CHAT_MCP_SERVERS_RAW = os.getenv("CHAT_MCP_SERVERS", "")
+CHAT_MCP_SERVERS = _parse_mcp_servers(CHAT_MCP_SERVERS_RAW)
+
 # --- Debug Configuration ---
 DEBUG_LEVEL = os.getenv("DEBUG_LEVEL", "standard").lower()
 DEBUG_LEVELS = {"minimal": 0, "standard": 1, "verbose": 2, "trace": 3}
@@ -422,14 +470,13 @@ If no duplicates, return: {{"merge_pairs": []}}""")
 DEFAULT_CHAT_PROMPT = os.getenv("DEFAULT_CHAT_PROMPT", """The current time and date are: {current_datetime}
 You are a knowledgeable news analyst. The user is asking about a current developing news event called '{event_name}'. You have access to a collection of articles from multiple sources plus the current event summary. Use them to answer concisely. Cite specific publishers when relevant. If the articles don't contain the answer, say so honestly. Be brief — this is a chat, not an essay.
 
+You may also have access to web search and other tools via MCP. Use them when the articles don't cover the question or the user explicitly asks for current/recent information. Briefly mention when you searched.
+
 Event summary (auto-generated from the article set, may be incomplete):
 {summary_block}
 
 Articles in this event (most recent first, excerpts trimmed):
 {articles_block}
-
-Conversation so far:
-{history_block}
 
 User's new question:
 {question}
@@ -453,4 +500,5 @@ logger.info(
     f"PURGE_ARCHIVE_AFTER_DAYS={PURGE_ARCHIVE_AFTER_DAYS}, PURGE_BATCH_LIMIT={PURGE_BATCH_LIMIT}, "
     f"PURGE_EMPTY_BATCH_LIMIT={PURGE_EMPTY_BATCH_LIMIT}, PURGE_EMPTY_FLOOR_SECONDS={PURGE_EMPTY_FLOOR_SECONDS}"
 )
+logger.info(f"CONFIG: CHAT_MCP_SERVERS={len(CHAT_MCP_SERVERS)} configured")
 logger.info(f"CONFIG: MAIN_PORT={MAIN_PORT}")

@@ -463,12 +463,55 @@ function showReaderExtras() {
 function buildChatBubble(role, content) {
   const cls = role === "user" ? "chat-msg-user" : "chat-msg-assistant";
   const label = role === "user" ? "You" : "AI";
-  const rendered = role === "assistant" ? renderChatMarkdown(content) : escapeHtml(content);
-  return `<div class="chat-msg ${cls}" data-role="${role}"><div class="chat-msg-label">${label}</div><div class="chat-msg-body">${rendered}</div></div>`;
+  let bodyHtml;
+  if (role === "assistant") {
+    if (content) {
+      bodyHtml = renderChatMarkdown(content);
+    } else {
+      bodyHtml = `<span class="chat-caret" data-streaming="true"></span>`;
+    }
+  } else {
+    bodyHtml = escapeHtml(content);
+  }
+  return `<div class="chat-msg ${cls}" data-role="${role}"><div class="chat-msg-label">${label}</div><div class="chat-msg-body">${bodyHtml}</div></div>`;
 }
 
 function buildTypingBubble() {
   return `<div class="chat-msg chat-msg-assistant chat-msg-typing" data-role="assistant"><div class="chat-msg-label">AI</div><div class="chat-msg-body"><span class="chat-typing-dots"><span></span><span></span><span></span></span></div></div>`;
+}
+
+function setAssistantBodyAsPlainText(assistantEl, fullText, showCaret) {
+  const bodyEl = assistantEl.querySelector(".chat-msg-body");
+  if (!bodyEl) return;
+  const caretHtml = showCaret ? `<span class="chat-caret" data-streaming="true"></span>` : "";
+  bodyEl.textContent = fullText;
+  if (showCaret) {
+    bodyEl.appendChild(buildCaretElement());
+  }
+}
+
+function buildCaretElement() {
+  const el = document.createElement("span");
+  el.className = "chat-caret";
+  el.setAttribute("data-streaming", "true");
+  return el;
+}
+
+function ensureCaretInBody(assistantEl) {
+  const bodyEl = assistantEl.querySelector(".chat-msg-body");
+  if (!bodyEl) return;
+  let caret = bodyEl.querySelector(".chat-caret");
+  if (!caret) {
+    caret = buildCaretElement();
+    bodyEl.appendChild(caret);
+  }
+}
+
+function removeCaretFromBody(assistantEl) {
+  const bodyEl = assistantEl.querySelector(".chat-msg-body");
+  if (!bodyEl) return;
+  const caret = bodyEl.querySelector(".chat-caret");
+  if (caret) caret.remove();
 }
 
 function scrollChatToBottom(container) {
@@ -585,15 +628,14 @@ async function handleChatSubmit(eventId, messagesEl, inputEl, sendBtn) {
   inputEl.style.height = "auto";
   sendBtn.disabled = true;
   inputEl.disabled = true;
-  const typingBubble = buildTypingBubble();
-  messagesEl.insertAdjacentHTML("beforeend", typingBubble);
-  scrollChatToBottom(messagesEl);
 
   const assistantEl = document.createElement("div");
   assistantEl.className = "chat-msg chat-msg-assistant";
   assistantEl.dataset.role = "assistant";
-  assistantEl.innerHTML = `<div class="chat-msg-label">AI</div><div class="chat-msg-body"></div>`;
+  assistantEl.innerHTML = `<div class="chat-msg-label">AI</div><div class="chat-msg-body"><span class="chat-caret" data-streaming="true"></span></div>`;
   const bodyEl = assistantEl.querySelector(".chat-msg-body");
+  messagesEl.appendChild(assistantEl);
+  scrollChatToBottom(messagesEl);
   let fullAnswer = "";
 
   const controller = new AbortController();
@@ -607,24 +649,36 @@ async function handleChatSubmit(eventId, messagesEl, inputEl, sendBtn) {
       signal: controller.signal,
       onDelta: (delta) => {
         fullAnswer += delta;
-        bodyEl.innerHTML = renderChatMarkdown(fullAnswer);
+        bodyEl.textContent = fullAnswer;
+        ensureCaretInBody(assistantEl);
         scrollChatToBottom(messagesEl);
       },
+      onToolUse: (info) => {},
       onError: (err) => {
         const msg = err && err.message ? err.message : "stream error";
-        bodyEl.innerHTML = `<div class="chat-error">Error: ${escapeHtml(msg)}</div>`;
+        removeCaretFromBody(assistantEl);
+        bodyEl.textContent = "";
+        const errEl = document.createElement("div");
+        errEl.className = "chat-error";
+        errEl.textContent = `Error: ${msg}`;
+        bodyEl.appendChild(errEl);
       },
-      onDone: () => {},
+      onDone: () => {
+        removeCaretFromBody(assistantEl);
+        if (fullAnswer.trim()) {
+          bodyEl.innerHTML = renderChatMarkdown(fullAnswer);
+        }
+        scrollChatToBottom(messagesEl);
+      },
     });
   } catch (err) {
-    bodyEl.innerHTML = `<div class="chat-error">Error: ${escapeHtml(err.message || "stream failed")}</div>`;
+    removeCaretFromBody(assistantEl);
+    bodyEl.textContent = "";
+    const errEl = document.createElement("div");
+    errEl.className = "chat-error";
+    errEl.textContent = `Error: ${err.message || "stream failed"}`;
+    bodyEl.appendChild(errEl);
   } finally {
-    if (typingBubble) {
-      const live = messagesEl.querySelector(".chat-msg-typing");
-      if (live) live.remove();
-    }
-    messagesEl.appendChild(assistantEl);
-    scrollChatToBottom(messagesEl);
     chatAbortController = null;
     sendBtn.disabled = false;
     inputEl.disabled = false;
@@ -650,7 +704,9 @@ function collectChatHistoryFromDom(messagesEl) {
     if (role !== "user" && role !== "assistant") continue;
     const bodyEl = el.querySelector(".chat-msg-body");
     if (!bodyEl) continue;
-    out.push({ role, content: bodyEl.textContent || "" });
+    const text = (bodyEl.textContent || "").trim();
+    if (!text) continue;
+    out.push({ role, content: text });
   }
   return out;
 }

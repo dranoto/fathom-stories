@@ -1,16 +1,21 @@
 # app/grouping/chat.py
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from .. import config as app_config
 from ..schemas.event import ChatHistoryItem
 
 logger = logging.getLogger(__name__)
+
+
+OnTextDelta = Callable[[str], None]
+OnToolUse = Callable[[str, Dict[str, Any]], None]
 
 
 def _format_summary_block(summary: Optional[Dict[str, Any]]) -> str:
@@ -83,17 +88,6 @@ def _format_articles_block(
     return "\n".join(parts) if parts else "(no article content available)"
 
 
-def _format_history_block(history: Optional[List[ChatHistoryItem]]) -> str:
-    if not history:
-        return "(no prior turns)"
-    lines: List[str] = []
-    for item in history:
-        role = "User" if item.role == "user" else "Assistant"
-        content = item.content.strip()
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
-
-
 def build_chat_messages(
     event_name: str,
     summary: Optional[Dict[str, Any]],
@@ -107,7 +101,6 @@ def build_chat_messages(
         event_name=event_name,
         summary_block=_format_summary_block(summary),
         articles_block=_format_articles_block(articles, per_article_chars),
-        history_block=_format_history_block(chat_history),
         question=question.strip(),
     )
     messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
@@ -120,24 +113,148 @@ def build_chat_messages(
     return messages
 
 
-async def astream_chat_answer(
+def _extract_text_delta(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out: List[str] = []
+        for piece in content:
+            if isinstance(piece, str):
+                if piece:
+                    out.append(piece)
+            elif isinstance(piece, dict):
+                t = piece.get("text")
+                if isinstance(t, str) and t:
+                    out.append(t)
+                elif piece.get("type") == "text":
+                    t2 = piece.get("text")
+                    if isinstance(t2, str):
+                        out.append(t2)
+        return "".join(out)
+    return ""
+
+
+async def _ainvoke_tool(tool, args: Dict[str, Any], timeout_seconds: int) -> Any:
+    try:
+        return await asyncio.wait_for(tool.ainvoke(args), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        return f"Error: tool '{getattr(tool, 'name', '?')}' timed out after {timeout_seconds}s"
+    except Exception as e:
+        return f"Error: tool '{getattr(tool, 'name', '?')}' failed: {e}"
+
+
+def _stringify_tool_result(result: Any) -> str:
+    if isinstance(result, str):
+        return result
+    try:
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception:
+        return str(result)
+
+
+async def astream_chat_with_tools(
+    llm: ChatOpenAI,
+    messages: List[BaseMessage],
+    tools: Optional[List[Any]] = None,
+    max_iterations: int = 4,
+    tool_timeout_seconds: int = 30,
+    on_text_delta: Optional[OnTextDelta] = None,
+    on_tool_use: Optional[OnToolUse] = None,
+) -> str:
+    """
+    Stream a chat answer with optional tool-calling. Returns the full final text.
+
+    - If `tools` is empty/None: just streams and returns (no tool loop).
+    - If `tools`: runs the agent loop up to `max_iterations`. After each LLM
+      stream completes, if the assistant message contains tool_calls, executes
+      them and feeds results back as ToolMessages, then loops. If no tool_calls,
+      returns the final text.
+    """
+    tools = tools or []
+    full_text_parts: List[str] = []
+
+    if not tools:
+        async for delta in _astream_plain(llm, messages):
+            if delta:
+                full_text_parts.append(delta)
+                if on_text_delta:
+                    on_text_delta(delta)
+        return "".join(full_text_parts)
+
+    tools_by_name: Dict[str, Any] = {}
+    for t in tools:
+        name = getattr(t, "name", None)
+        if name:
+            tools_by_name[name] = t
+
+    bound_llm = llm.bind_tools(tools)
+    working_messages: List[BaseMessage] = list(messages)
+
+    for iteration in range(max_iterations):
+        accumulated: Optional[AIMessageChunk] = None
+        async for chunk in bound_llm.astream(working_messages):
+            if accumulated is None:
+                accumulated = chunk
+            else:
+                accumulated = accumulated + chunk
+            delta = _extract_text_delta(getattr(chunk, "content", None))
+            if delta:
+                full_text_parts.append(delta)
+                if on_text_delta:
+                    on_text_delta(delta)
+
+        if accumulated is None:
+            logger.warning("Chat LLM produced no chunks; ending tool loop")
+            break
+
+        ai_message: AIMessage = accumulated
+        tool_calls = list(getattr(ai_message, "tool_calls", []) or [])
+        working_messages.append(ai_message)
+
+        if not tool_calls:
+            break
+
+        for tool_call in tool_calls:
+            name = tool_call.get("name") if isinstance(tool_call, dict) else getattr(tool_call, "name", None)
+            args = tool_call.get("args") if isinstance(tool_call, dict) else getattr(tool_call, "args", {}) or {}
+            tc_id = tool_call.get("id") if isinstance(tool_call, dict) else getattr(tool_call, "id", None)
+            tool = tools_by_name.get(name) if name else None
+            if tool is None:
+                tool_msg = ToolMessage(
+                    content=f"Error: tool '{name}' is not available.",
+                    tool_call_id=tc_id or "",
+                )
+                if on_tool_use and name:
+                    on_tool_use(name, args if isinstance(args, dict) else {})
+                working_messages.append(tool_msg)
+                continue
+
+            if on_tool_use:
+                try:
+                    on_tool_use(name, args if isinstance(args, dict) else {})
+                except Exception:
+                    pass
+
+            result = await _ainvoke_tool(tool, args if isinstance(args, dict) else {}, tool_timeout_seconds)
+            tool_msg = ToolMessage(
+                content=_stringify_tool_result(result),
+                tool_call_id=tc_id or "",
+            )
+            working_messages.append(tool_msg)
+
+    return "".join(full_text_parts)
+
+
+async def _astream_plain(
     llm: ChatOpenAI,
     messages: List[BaseMessage],
 ) -> AsyncIterator[str]:
     try:
         async for chunk in llm.astream(messages):
             content = getattr(chunk, "content", None)
-            if isinstance(content, str):
-                if content:
-                    yield content
-            elif isinstance(content, list):
-                for piece in content:
-                    if isinstance(piece, str) and piece:
-                        yield piece
-                    elif isinstance(piece, dict):
-                        text = piece.get("text")
-                        if isinstance(text, str) and text:
-                            yield text
+            delta = _extract_text_delta(content)
+            if delta:
+                yield delta
     except Exception as e:
         logger.error(f"Chat LLM stream failed: {e}", exc_info=True)
         raise

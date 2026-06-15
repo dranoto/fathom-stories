@@ -151,6 +151,20 @@
   0%, 60%, 100% { transform: scale(0.6); opacity: 0.5; }
   30% { transform: scale(1); opacity: 1; }
 }
+.chat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: currentColor;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  opacity: 0.85;
+  animation: chat-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes chat-caret-blink {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0; }
+}
 .chat-empty {
   color: var(--fg-dim);
   font-size: 13px;
