@@ -21,9 +21,6 @@ export function toggleTheme() {
   const next = currentTheme() === "light" ? "dark" : "light";
   applyTheme(next);
   try { localStorage.setItem(STORAGE_KEY, next); } catch (_) {}
+  window.dispatchEvent(new CustomEvent("theme-changed", { detail: { theme: next } }));
 }
 
-export function setupThemeButton() {
-  const btn = document.getElementById("btn-theme");
-  if (btn) btn.addEventListener("click", () => toggleTheme());
-}

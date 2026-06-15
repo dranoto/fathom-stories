@@ -16,7 +16,12 @@
   --scrollbar-track: transparent;
   --scrollbar-thumb: #2a3142;
   --scrollbar-thumb-hover: #3a4358;
+  --font-scale: 1;
 }
+
+html[data-font-scale="small"] { --font-scale: 0.9; }
+html[data-font-scale="medium"] { --font-scale: 1; }
+html[data-font-scale="large"] { --font-scale: 1.15; }
 
 [data-theme="light"] {
   --bg: #f7f8fa;

@@ -1,7 +1,8 @@
 // frontend/js/mobileMenu.js
 import { runFetch, runRegroup, runGrouping, stats, listFeeds, addFeed, removeFeed, pauseFeed, unpauseFeed, refreshFeed } from "./apiService.js";
 import { getInboxCounts, getEvents, setEvents } from "./state.js";
-import { loadTheme, toggleTheme } from "./theme.js";
+import { loadTheme, toggleTheme, currentTheme } from "./theme.js";
+import { getFontSize, setFontSize } from "./fontSize.js";
 import { getPwaInstallState, installPwa } from "./pwa.js";
 import { clearRuntimeCache } from "./swBridge.js";
 import { escapeHtml, renderEventTabs } from "./eventTabs.js";
@@ -75,6 +76,15 @@ function buildMenuBody() {
     </div>
   `;
 
+  const theme = currentTheme();
+  const fontSize = getFontSize();
+  const themeLabel = theme === "light" ? "☀ Light" : "☾ Dark";
+  const sizeBtns = [
+    { level: "small", size: 1, label: "A" },
+    { level: "medium", size: 2, label: "A" },
+    { level: "large", size: 3, label: "A" },
+  ].map(b => `<button class="menu-appearance-btn${b.level === fontSize ? " active" : ""}" data-action="font-size" data-font-size="${b.level}" data-size="${b.size}" title="${b.level} text">${b.label}</button>`).join("");
+
   return `
     <div class="menu-section">
       <div class="menu-section-header">
@@ -82,6 +92,21 @@ function buildMenuBody() {
       </div>
       <div class="menu-section-body">
         <div class="menu-stats">${escapeHtml(statsLine)}</div>
+      </div>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-header">
+        <span class="menu-section-title">Appearance</span>
+      </div>
+      <div class="menu-section-body">
+        <div class="menu-appearance-row">
+          <span class="menu-appearance-label">Theme</span>
+          <button class="menu-appearance-theme" data-action="theme">${themeLabel}</button>
+        </div>
+        <div class="menu-appearance-row">
+          <span class="menu-appearance-label">Text size</span>
+          <div class="menu-appearance-options">${sizeBtns}</div>
+        </div>
       </div>
     </div>
     <div class="menu-section">
@@ -101,10 +126,6 @@ function buildMenuBody() {
         <button class="mobile-menu-item" data-action="regroup">
           <span class="item-icon">⇆</span>
           <span class="item-text">Regroup now</span>
-        </button>
-        <button class="mobile-menu-item" data-action="theme">
-          <span class="item-icon">◐</span>
-          <span class="item-text">Toggle light/dark</span>
         </button>
       </div>
     </div>
@@ -247,7 +268,13 @@ function wireActions(root) {
         } catch (e) { alert("Regroup failed: " + e.message); }
       } else if (action === "theme") {
         toggleTheme();
-        closeMenu();
+        rerender();
+      } else if (action === "font-size") {
+        const level = btn.dataset.fontSize;
+        if (level) {
+          setFontSize(level);
+          rerender();
+        }
       } else if (action === "install") {
         installPwa();
       }
@@ -276,6 +303,16 @@ export function setupMobileMenu(onAfterRefresh) {
     if (e.key === "Escape" && isOpen) closeMenu();
   });
   document.addEventListener("mobile-menu-refresh-chips", () => {
+    if (!isOpen) return;
+    if (isMobileWidth()) renderSheetBody();
+    else renderPanelBody();
+  });
+  window.addEventListener("theme-changed", () => {
+    if (!isOpen) return;
+    if (isMobileWidth()) renderSheetBody();
+    else renderPanelBody();
+  });
+  window.addEventListener("font-size-changed", () => {
     if (!isOpen) return;
     if (isMobileWidth()) renderSheetBody();
     else renderPanelBody();

@@ -10,7 +10,8 @@ import { renderEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
 import { setupSearch } from "./js/search.js";
-import { loadTheme, setupThemeButton } from "./js/theme.js";
+import { loadTheme } from "./js/theme.js";
+import { loadFontSize } from "./js/fontSize.js";
 import { startCountdowns } from "./js/countdowns.js";
 import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
 import { registerServiceWorker } from "./js/pwa.js";
@@ -142,7 +143,7 @@ async function handleSwipeNav(direction) {
 
 async function bootstrap() {
   loadTheme();
-  setupThemeButton();
+  loadFontSize();
   setupReader();
   setupSearch();
   setupMobileMenu(() => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
