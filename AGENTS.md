@@ -116,19 +116,28 @@ scraper_assistant/        # bypass-paywalls extension (gitignored)
 
 **Live assigner** runs after each fetch:
 - Pulls ungrouped articles (`event_id IS NULL`)
-- Sends: list of articles + active events + cooling events + 5 most recent `GroupingFeedback` rows
-- LLM returns per-article decision: existing | new | uncategorized + importance_score
-- Apply decisions in a single transaction
+- Sends: list of articles + active events + 5 most recent `GroupingFeedback` rows
+- LLM returns per-article decision: existing | uncategorized + importance_score
+- Apply decisions in a single transaction (live pass never creates events)
+
+**Hourly regrouper** runs as `regroup_uncategorized`:
+- Pulls ungrouped articles (up to 100) + active + recently-archived events
+- Sends full context to LLM, gets back per-article decision: existing | new | uncategorized
+- 2+ articles sharing a new name create a fresh Event
+- **Followed by an LLM dedup pass** over all active events to merge semantic duplicates (confidence threshold 0.7)
 
 **Daily reclusterer** runs at 03:00 UTC:
-- Pulls last-14-days articles + active/cooling/archived (last 30d) events
-- Sends full context to LLM, gets back: merge_candidates, split_candidates, cooling_events, reviving_events, new_events
+- Pulls last-14-days articles + active/archived (last 30d) events
+- Sends full context to LLM, gets back: merge_candidates, split_candidates, reviving_events, new_events
 - Writes to `recluster_proposals` table (currently write-only — no UI reads them; user removed the admin panel)
-- **`revive` happens ONLY in recluster** — live assigner never revives archived events
+- **`revive` happens ONLY in recluster** — live assigner never revives archived events; the regrouper does it via `find_or_create_event`
 
-**Hourly lifecycle**:
-- `active` → `cooling` if `last_article_at` 3-7 days old
-- `active|cooling` → `archived` if `last_article_at` > `AUTO_ARCHIVE_DAYS` (default 7)
+**Hourly lifecycle** — two states only (`active` / `archived`, no cooling):
+- Each new article **resets** the event's `expires_at = max(article.published_date, now) + EVENT_TTL_RESET_HOURS` (default 48h)
+- `active` → `archived` when `expires_at < now` (eager reaper in `lifecycle.tick()`, lazy reaper in `list_events`)
+- The regrouper is the only revival path for archived events: a new matching article from the inbox brings them back via `find_or_create_event()`
+- Empty-event reaper: deletes 0-article events older than `PURGE_EMPTY_FLOOR_SECONDS` (30s) — defends against `move_article` / `split_event` / `create_event` artifacts
+- Ancient-archive purger: hard-deletes archived events older than `PURGE_ARCHIVE_AFTER_DAYS` (180d) and their recluster proposals
 
 **Reader-driven corrections** (move-to-event, remove-from-event) write `GroupingFeedback` rows. Top 5 most recent are injected into the next LLM call as few-shot examples (the "editor corrections are ground truth" section).
 

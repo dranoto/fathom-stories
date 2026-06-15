@@ -119,7 +119,7 @@ async function renderEventPicker(article) {
     picker.hidden = false;
     select.innerHTML = `<option value="">— select event —</option>`;
     try {
-      const events = await listEvents({ minArticles: 1 });
+      const events = await listEvents({ minArticles: 1, status: "active" });
       for (const ev of events) {
         select.innerHTML += `<option value="${ev.id}">${escapeHtml(ev.name)} (${ev.article_count})</option>`;
       }

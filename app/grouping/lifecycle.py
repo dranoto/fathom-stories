@@ -11,59 +11,30 @@ from .. import config as app_config
 logger = logging.getLogger(__name__)
 
 
-def _clamp_importance(score: Optional[float]) -> float:
-    if score is None:
-        return 0.5
-    try:
-        s = float(score)
-    except (TypeError, ValueError):
-        return 0.5
-    return max(0.0, min(1.0, s))
+def reset_expiry(anchor: Optional[datetime] = None) -> datetime:
+    """
+    Returns the event's new expiry timestamp.
 
-
-def compute_new_expiry(
-    current_expires_at: Optional[datetime],
-    importance_score: Optional[float],
-    now: Optional[datetime] = None,
-) -> datetime:
-    now = now or datetime.now(timezone.utc)
-    base = timedelta(hours=app_config.EVENT_TTL_BASE_HOURS)
-    cap = now + timedelta(hours=app_config.EVENT_TTL_MAX_HOURS)
-    if app_config.EVENT_TTL_IMPORTANCE_WEIGHTED:
-        ext = base * (0.5 + _clamp_importance(importance_score))
+    The timer is `max(article.published_date, now) + EVENT_TTL_RESET_HOURS`.
+    A freshly-arrived article gives a full 48h window. A stale article (1+ day
+    old) still gets a full 48h window, anchored to now. If no anchor is given,
+    uses now (for brand-new events with no articles yet).
+    """
+    now = datetime.now(timezone.utc)
+    if anchor is not None:
+        if anchor.tzinfo is None:
+            anchor = anchor.replace(tzinfo=timezone.utc)
+        anchor = max(anchor, now)
     else:
-        ext = base
-    anchor = current_expires_at if current_expires_at else now
-    if anchor.tzinfo is None:
-        anchor = anchor.replace(tzinfo=timezone.utc)
-    new_expiry = max(now, anchor) + ext
-    return min(new_expiry, cap)
+        anchor = now
+    return anchor + timedelta(hours=app_config.EVENT_TTL_RESET_HOURS)
 
 
-def initial_expiry(
-    anchor: Optional[datetime] = None,
-    importance_score: Optional[float] = None,
-    now: Optional[datetime] = None,
-) -> datetime:
-    now = now or datetime.now(timezone.utc)
-    base = timedelta(hours=app_config.EVENT_TTL_BASE_HOURS)
-    cap = now + timedelta(hours=app_config.EVENT_TTL_MAX_HOURS)
-    if app_config.EVENT_TTL_IMPORTANCE_WEIGHTED:
-        ext = base * (0.5 + _clamp_importance(importance_score))
-    else:
-        ext = base
-    if anchor is not None and anchor.tzinfo is None:
-        anchor = anchor.replace(tzinfo=timezone.utc)
-    start = anchor or now
-    return min(start + ext, cap)
-
-
-def extend_expiry_on_event(
+def reset_expiry_on_event(
     event: Event,
-    importance_score: Optional[float],
-    now: Optional[datetime] = None,
+    anchor: Optional[datetime] = None,
 ) -> None:
-    event.expires_at = compute_new_expiry(event.expires_at, importance_score, now=now)
+    event.expires_at = reset_expiry(anchor)
 
 
 def set_event_status(event_id: int, status: str) -> bool:
@@ -86,18 +57,13 @@ def revive_event(event_id: int) -> bool:
             return False
         ev.status = "active"
         ev.archived_at = None
-        from ..database.models import Article
         newest = (
             db.query(Article)
             .filter(Article.event_id == event_id)
             .order_by(desc(Article.published_date), desc(Article.fetched_at))
             .first()
         )
-        score = newest.importance_score if newest else None
-        ev.expires_at = initial_expiry(
-            anchor=ev.last_article_at or datetime.now(timezone.utc),
-            importance_score=score,
-        )
+        ev.expires_at = reset_expiry(anchor=newest.published_date if newest else ev.last_article_at)
     logger.info(f"LIFECYCLE: revived event {event_id} (expires_at={ev.expires_at})")
     return True
 
@@ -110,7 +76,7 @@ def _reap_expired(db, event_ids: list) -> int:
         db.query(Event)
         .filter(
             Event.id.in_(event_ids),
-            Event.status.in_(("active", "cooling")),
+            Event.status == "active",
             Event.expires_at.isnot(None),
             Event.expires_at < now,
         )
@@ -128,49 +94,15 @@ def reap_expired_in_list(db, event_ids: list) -> int:
 
 def tick() -> dict:
     now = datetime.now(timezone.utc)
-    archive_cutoff = now - timedelta(days=app_config.AUTO_ARCHIVE_DAYS)
-    cooling_cutoff = now - timedelta(days=3)
-    archived_count = 0
-    cooling_count = 0
     reaped_count = 0
     purged_count = 0
     purged_empty = 0
 
     with db_session_scope() as db:
-        cooling_targets = (
-            db.query(Event)
-            .filter(
-                Event.status == "active",
-                Event.last_article_at.isnot(None),
-                Event.last_article_at < cooling_cutoff,
-                Event.last_article_at >= archive_cutoff,
-                Event.expires_at.is_(None),
-            )
-            .all()
-        )
-        for ev in cooling_targets:
-            ev.status = "cooling"
-            cooling_count += 1
-
-        archive_targets = (
-            db.query(Event)
-            .filter(
-                Event.status.in_(("active", "cooling")),
-                Event.last_article_at.isnot(None),
-                Event.last_article_at < archive_cutoff,
-                Event.expires_at.is_(None),
-            )
-            .all()
-        )
-        for ev in archive_targets:
-            ev.status = "archived"
-            ev.archived_at = now
-            archived_count += 1
-
         reap_targets = (
             db.query(Event)
             .filter(
-                Event.status.in_(("active", "cooling")),
+                Event.status == "active",
                 Event.expires_at.isnot(None),
                 Event.expires_at < now,
             )
@@ -202,13 +134,10 @@ def tick() -> dict:
     purged_count = purge_ancient_archives(limit=app_config.PURGE_BATCH_LIMIT)
 
     logger.info(
-        f"LIFECYCLE: cooling={cooling_count}, archived(legacy)={archived_count}, "
-        f"reaped(expires_at)={reaped_count}, purged(ancient)={purged_count}, "
+        f"LIFECYCLE: reaped(expires_at)={reaped_count}, purged(ancient)={purged_count}, "
         f"purged(empty)={purged_empty}"
     )
     return {
-        "cooled": cooling_count,
-        "archived": archived_count,
         "reaped": reaped_count,
         "purged": purged_count,
         "purged_empty": purged_empty,

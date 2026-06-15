@@ -18,7 +18,7 @@ import { setupSwipeNav } from "./js/swipeNav.js";
 async function refreshEvents() {
   let all = [];
   try {
-    all = await listEvents({ minArticles: 2 });
+    all = await listEvents({ minArticles: 2, status: "active" });
     setEvents(all);
   } catch (e) {
     setStatus("error", `load failed: ${e.message}`);

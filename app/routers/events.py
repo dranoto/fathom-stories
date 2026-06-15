@@ -111,8 +111,8 @@ async def list_events(
     result.sort(
         key=lambda r: (
             -(r.article_count or 0),
-            -(r.created_at.timestamp() if r.created_at else 0),
             -(r.last_article_at.timestamp() if r.last_article_at else 0),
+            -(r.created_at.timestamp() if r.created_at else 0),
         )
     )
     return result
@@ -124,6 +124,8 @@ async def create_event(
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     event = Event(name=event_data.name.strip(), description=event_data.description, status="active")
+    from ..grouping.lifecycle import reset_expiry
+    event.expires_at = reset_expiry(anchor=datetime.now(timezone.utc))
     db.add(event)
     try:
         db.commit()
@@ -303,8 +305,8 @@ async def add_article_to_event(
         event.last_article_at = article.published_date or datetime.now(timezone.utc)
     event.status = "active"
     event.archived_at = None
-    from ..grouping.lifecycle import extend_expiry_on_event
-    extend_expiry_on_event(event, article.importance_score)
+    from ..grouping.lifecycle import reset_expiry_on_event
+    reset_expiry_on_event(event, anchor=article.published_date or datetime.now(timezone.utc))
     record_correction(
         article_id=article_id,
         kind="move",
@@ -439,11 +441,11 @@ async def move_article(
         raise HTTPException(status_code=400, detail="Article is not in this event")
     target_id = body.target_event_id
     if body.new_event_name and not target_id:
-        from ..grouping.lifecycle import initial_expiry
+        from ..grouping.lifecycle import reset_expiry
         new_ev = Event(
             name=body.new_event_name.strip(),
             status="active",
-            expires_at=initial_expiry(importance_score=article.importance_score),
+            expires_at=reset_expiry(anchor=article.published_date or datetime.now(timezone.utc)),
         )
         db.add(new_ev)
         db.flush()
@@ -464,10 +466,10 @@ async def move_article(
     article.event_id = target_id
     article.grouped_at = datetime.now(timezone.utc)
     if target_id:
-        from ..grouping.lifecycle import extend_expiry_on_event
+        from ..grouping.lifecycle import reset_expiry_on_event
         target_ev = db.query(Event).filter(Event.id == target_id).first()
         if target_ev is not None:
-            extend_expiry_on_event(target_ev, article.importance_score)
+            reset_expiry_on_event(target_ev, anchor=article.published_date or datetime.now(timezone.utc))
     try:
         db.commit()
     except Exception as e:
@@ -528,21 +530,21 @@ async def split_event(
     new_ev = Event(name=body.new_event_name.strip(), status="active")
     db.add(new_ev)
     db.flush()
-    from ..grouping.lifecycle import initial_expiry, extend_expiry_on_event
+    from ..grouping.lifecycle import reset_expiry, reset_expiry_on_event
     split_articles = (
         db.query(Article)
         .filter(Article.id.in_(body.article_ids), Article.event_id == event_id)
         .all()
     )
     for art in split_articles:
-        extend_expiry_on_event(new_ev, art.importance_score)
+        reset_expiry_on_event(new_ev, anchor=art.published_date or datetime.now(timezone.utc))
     if split_articles:
         new_ev.last_article_at = max(
             (a.published_date for a in split_articles if a.published_date),
             default=None,
         ) or datetime.now(timezone.utc)
     if new_ev.expires_at is None:
-        new_ev.expires_at = initial_expiry(importance_score=None)
+        new_ev.expires_at = reset_expiry(anchor=datetime.now(timezone.utc))
     db.query(Article).filter(Article.id.in_(body.article_ids), Article.event_id == event_id).update(
         {Article.event_id: new_ev.id}, synchronize_session=False
     )

@@ -84,8 +84,8 @@ def merge_events(db, primary_id: int, secondary_id: int, kind: str = "dedup_merg
         a.event_id = primary_id
 
     max_importance = max((a.importance_score for a in secondary_articles if a.importance_score is not None), default=0.5)
-    from .lifecycle import extend_expiry_on_event
-    extend_expiry_on_event(primary, max_importance)
+    from .lifecycle import reset_expiry_on_event
+    reset_expiry_on_event(primary)
 
     primary.status = "active"
     primary.archived_at = None

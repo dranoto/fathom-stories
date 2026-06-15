@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import datetime, timezone, timedelta
 import uvicorn
 
 from . import config as app_config
@@ -385,6 +386,40 @@ def cmd_dedup_events(args):
     print(f"\nApplied {applied} action(s).")
 
 
+def cmd_revive_recent(args):
+    from .database.models import Event
+    from .grouping.lifecycle import reset_expiry
+
+    with db_session_scope() as db:
+        targets = (
+            db.query(Event)
+            .filter(
+                Event.status == "archived",
+                Event.last_article_at.isnot(None),
+                Event.last_article_at >= datetime.now(timezone.utc) - timedelta(days=7),
+            )
+            .order_by(Event.id)
+            .all()
+        )
+        if not targets:
+            print("No archived events with articles in the last 7 days.")
+            return
+
+        for ev in targets:
+            new_expiry = reset_expiry(anchor=ev.last_article_at)
+            if not args.apply:
+                print(f"  REVIVE: id={ev.id} name={ev.name!r} last_article_at={ev.last_article_at} -> expires_at={new_expiry}")
+            else:
+                ev.status = "active"
+                ev.archived_at = None
+                ev.expires_at = new_expiry
+
+        if not args.apply:
+            print(f"\n{len(targets)} event(s) would be revived. Re-run with --apply to commit.")
+            return
+    print(f"\nRevived {len(targets)} event(s).")
+
+
 def cmd_purge_archive(args):
     create_db_and_tables()
     n = lifecycle_module.purge_ancient_archives(limit=args.limit)
@@ -430,6 +465,10 @@ def main():
     p_dedup = sub.add_parser("dedup-events", help="One-shot: find duplicate-name event groups and merge/delete. Dry-run by default.")
     p_dedup.add_argument("--apply", action="store_true", help="Commit the proposed dedup actions (default: dry-run)")
     p_dedup.set_defaults(func=cmd_dedup_events)
+
+    p_revive = sub.add_parser("revive-recent", help="One-shot: revive archived events whose last article is < 7d old. Dry-run by default.")
+    p_revive.add_argument("--apply", action="store_true", help="Commit the proposed revivals (default: dry-run)")
+    p_revive.set_defaults(func=cmd_revive_recent)
 
     p_test = sub.add_parser("test-extraction", help="Run extraction tests on candidate RSS feed URL(s)")
     p_test.add_argument("--url", action="append", help="Feed URL to test (repeatable). Defaults to RSS_FEED_URLS from .env.")
