@@ -47,6 +47,12 @@ def create_db_and_tables() -> None:
                     "WHERE expires_at IS NULL"
                 ))
             logger.info("Migrated: added events.expires_at with backfill (last_article_at or created_at + 48h)")
+    if "feed_sources" in insp.get_table_names():
+        feed_cols = {c["name"] for c in insp.get_columns("feed_sources")}
+        if "is_paused" not in feed_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE feed_sources ADD COLUMN is_paused BOOLEAN DEFAULT 0"))
+            logger.info("Migrated: added feed_sources.is_paused")
     if "article_reads" in insp.get_table_names():
         read_cols = {c["name"] for c in insp.get_columns("article_reads")}
         if "visitor_id" not in read_cols:

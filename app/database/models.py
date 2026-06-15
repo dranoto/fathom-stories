@@ -1,6 +1,6 @@
 # app/database/models.py
 from sqlalchemy import (
-    Column, Integer, String, DateTime, ForeignKey, JSON, Float, Text, Index
+    Column, Integer, String, DateTime, ForeignKey, JSON, Float, Text, Index, Boolean
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
@@ -22,6 +22,7 @@ class FeedSource(Base):
     fetch_interval_minutes = Column(Integer, nullable=False, default=30)
     last_fetched_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+    is_paused = Column(Boolean, nullable=False, default=False)
 
     articles = relationship("Article", back_populates="feed_source")
 

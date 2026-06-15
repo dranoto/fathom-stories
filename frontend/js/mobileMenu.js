@@ -1,18 +1,23 @@
 // frontend/js/mobileMenu.js
-import { runFetch, runRegroup, runGrouping, stats } from "./apiService.js";
-import { getInboxCounts, getEvents } from "./state.js";
+import { runFetch, runRegroup, runGrouping, stats, listFeeds, addFeed, removeFeed, pauseFeed, unpauseFeed, refreshFeed } from "./apiService.js";
+import { getInboxCounts, getEvents, setEvents } from "./state.js";
 import { loadTheme, toggleTheme } from "./theme.js";
 import { getPwaInstallState, installPwa } from "./pwa.js";
 import { clearRuntimeCache } from "./swBridge.js";
-import { escapeHtml } from "./eventTabs.js";
+import { escapeHtml, renderEventTabs } from "./eventTabs.js";
 
 let isOpen = false;
 let onRunAfterRefresh = null;
 let cachedStats = null;
+let cachedFeeds = null;
 let panelEl = null;
 
 async function refreshCachedStats() {
   try { cachedStats = await stats(); } catch (_) { cachedStats = null; }
+}
+
+async function refreshCachedFeeds() {
+  try { cachedFeeds = await listFeeds(); } catch (_) { cachedFeeds = null; }
 }
 
 function isMobileWidth() {
@@ -33,6 +38,42 @@ function buildMenuBody() {
          <span class="item-text">Install app</span>
        </button>`
     : "";
+
+  const feedsHtml = (cachedFeeds || []).map(f => {
+    const status = f.is_paused ? "paused" : (f.last_error ? "error" : "ok");
+    const statusLabel = f.is_paused ? "Paused" : (f.last_error ? "Error" : "Active");
+    const lastFetched = f.last_fetched_at
+      ? new Date(f.last_fetched_at).toLocaleString()
+      : "never";
+    return `<div class="feed-row" data-feed-id="${f.id}">
+      <div class="feed-row-main">
+        <div class="feed-row-name">${escapeHtml(f.name || f.url)}</div>
+        <div class="feed-row-url">${escapeHtml(f.url)}</div>
+        <div class="feed-row-meta">
+          <span class="feed-row-status feed-row-status-${status}">${statusLabel}</span>
+          <span>${f.article_count} articles</span>
+          <span>last ${escapeHtml(lastFetched)}</span>
+        </div>
+      </div>
+      <div class="feed-row-actions">
+        <button class="feed-action" data-feed-action="refresh" data-feed-id="${f.id}" title="Refresh now">↻</button>
+        <button class="feed-action" data-feed-action="pause" data-feed-id="${f.id}" title="${f.is_paused ? "Unpause" : "Pause"}">${f.is_paused ? "▶" : "⏸"}</button>
+        <button class="feed-action feed-action-danger" data-feed-action="remove" data-feed-id="${f.id}" title="Remove">×</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  const feedsBlock = `
+    <div class="menu-section">
+      <div class="menu-section-header">
+        <span class="menu-section-title">Feeds</span>
+        <button class="menu-section-action" data-action="add-feed">+ Add feed</button>
+      </div>
+      <div class="menu-section-body">
+        ${feedsHtml || `<div class="menu-section-empty">No feeds configured</div>`}
+      </div>
+    </div>
+  `;
 
   return `
     <div class="menu-section">
@@ -67,6 +108,7 @@ function buildMenuBody() {
         </button>
       </div>
     </div>
+    ${feedsBlock}
   `;
 }
 
@@ -122,9 +164,62 @@ function renderPanelBody() {
 }
 
 function wireActions(root) {
+  root.querySelectorAll("button[data-feed-action]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.feedAction;
+      const id = parseInt(btn.dataset.feedId, 10);
+      if (action === "refresh") {
+        btn.disabled = true;
+        try {
+          await refreshFeed(id);
+          await refreshCachedFeeds();
+          rerender();
+        } catch (err) {
+          alert("Refresh failed: " + err.message);
+        } finally {
+          btn.disabled = false;
+        }
+      } else if (action === "pause") {
+        try {
+          const current = (cachedFeeds || []).find(f => f.id === id);
+          if (current && current.is_paused) {
+            await unpauseFeed(id);
+          } else {
+            await pauseFeed(id);
+          }
+          await refreshCachedFeeds();
+          rerender();
+        } catch (err) {
+          alert("Pause failed: " + err.message);
+        }
+      } else if (action === "remove") {
+        if (!confirm("Remove this feed? Articles already fetched are kept.")) return;
+        try {
+          await removeFeed(id);
+          await refreshCachedFeeds();
+          rerender();
+        } catch (err) {
+          alert("Remove failed: " + err.message);
+        }
+      }
+    });
+  });
   root.querySelectorAll("button[data-action]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
+      if (action === "add-feed") {
+        const url = prompt("Feed URL:");
+        if (!url) return;
+        try {
+          await addFeed({ url });
+          await refreshCachedFeeds();
+          rerender();
+        } catch (err) {
+          alert("Add feed failed: " + err.message);
+        }
+        return;
+      }
       if (action === "refresh") {
         closeMenu();
         try {
@@ -160,13 +255,19 @@ function wireActions(root) {
   });
 }
 
+function rerender() {
+  if (!isOpen) return;
+  if (isMobileWidth()) renderSheetBody();
+  else renderPanelBody();
+}
+
 export function setupMobileMenu(onAfterRefresh) {
   onRunAfterRefresh = onAfterRefresh;
   const btn = document.getElementById("btn-menu");
   const close = document.getElementById("btn-menu-close");
   const backdrop = document.getElementById("mobile-menu-backdrop");
   if (btn) btn.addEventListener("click", async () => {
-    await refreshCachedStats();
+    await Promise.all([refreshCachedStats(), refreshCachedFeeds()]);
     openMenu();
   });
   if (close) close.addEventListener("click", () => closeMenu());
@@ -182,7 +283,7 @@ export function setupMobileMenu(onAfterRefresh) {
 }
 
 export async function renderMobileMenu() {
-  await refreshCachedStats();
+  await Promise.all([refreshCachedStats(), refreshCachedFeeds()]);
   if (isOpen) {
     if (isMobileWidth()) renderSheetBody();
     else renderPanelBody();
