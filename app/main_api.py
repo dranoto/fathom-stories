@@ -37,6 +37,7 @@ def _init_llms(app: FastAPI) -> None:
         logger.warning("MAIN_API: OPENAI_API_KEY not set; LLM features disabled.")
         app.state.llm_summary_instance = None
         app.state.llm_grouping_instance = None
+        app.state.llm_chat_instance = None
         return
     app.state.llm_summary_instance = initialize_llm(
         api_key=app_config.OPENAI_API_KEY,
@@ -51,6 +52,13 @@ def _init_llms(app: FastAPI) -> None:
         model_name=app_config.DEFAULT_GROUPING_MODEL_NAME,
         temperature=app_config.GROUPING_LLM_TEMPERATURE,
         max_tokens=app_config.GROUPING_MAX_OUTPUT_TOKENS,
+    )
+    app.state.llm_chat_instance = initialize_llm(
+        api_key=app_config.OPENAI_API_KEY,
+        base_url=app_config.OPENAI_BASE_URL,
+        model_name=app_config.DEFAULT_CHAT_MODEL_NAME,
+        temperature=app_config.CHAT_LLM_TEMPERATURE,
+        max_tokens=app_config.CHAT_MAX_OUTPUT_TOKENS,
     )
 
 

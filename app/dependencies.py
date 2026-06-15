@@ -20,6 +20,13 @@ def get_llm_grouping(request: Request) -> ChatOpenAI:
     return request.app.state.llm_grouping_instance
 
 
+def get_llm_chat(request: Request) -> ChatOpenAI:
+    if not hasattr(request.app.state, 'llm_chat_instance') or request.app.state.llm_chat_instance is None:
+        logger.error("Dependency Error: Chat LLM not found in app.state.")
+        raise HTTPException(status_code=503, detail="Chat LLM has not been initialized.")
+    return request.app.state.llm_chat_instance
+
+
 def get_visitor_id(request: Request) -> str:
     visitor_id = getattr(request.state, "visitor_id", None)
     if not visitor_id:

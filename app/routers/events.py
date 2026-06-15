@@ -1,24 +1,28 @@
 # app/routers/events.py
+import json
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy import desc, func
 
 from .. import database
-from ..database.models import Event, EventSummary, Article, ArticleRead
+from ..database.models import Event, EventSummary, Article, ArticleRead, EventChatMessage
 from ..schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventDetailResponse,
     ArticleInEvent, EventSummaryResponse, EventSummaryData,
     MoveArticleRequest, MergeRequest, SplitRequest,
     ReclusterProposalOut, GroupingFeedbackOut, StatsOut,
+    ChatHistoryItem, EventChatRequest, EventChatPersistRequest, EventChatResponse,
 )
-from ..dependencies import get_llm_summary, get_visitor_id
+from ..dependencies import get_llm_summary, get_llm_chat, get_visitor_id
 from ..security import verify_event_exists
 from ..grouping.feedback import record_correction
 from ..grouping import lifecycle as lifecycle_module
+from ..grouping import chat as chat_module
 from .. import config as app_config
 
 logger = logging.getLogger(__name__)
@@ -664,4 +668,146 @@ async def stats(
         articles_total=total_articles, articles_ungrouped=ungrouped,
         events_active=active, events_cooling=cooling, events_archived=archived,
         proposals_pending=pending, feedback_count=feedback,
+    )
+
+
+@router.get("/{event_id}/chat-history", response_model=List[ChatHistoryItem])
+async def get_event_chat_history(
+    event_id: int,
+    visitor_id: str = Depends(get_visitor_id),
+    db: SQLAlchemySession = Depends(database.get_db),
+):
+    verify_event_exists(db, event_id)
+    rows = (
+        db.query(EventChatMessage)
+        .filter(
+            EventChatMessage.event_id == event_id,
+            EventChatMessage.visitor_id == visitor_id,
+        )
+        .order_by(EventChatMessage.created_at.asc(), EventChatMessage.id.asc())
+        .all()
+    )
+    return [
+        ChatHistoryItem(role=row.role, content=row.content)
+        for row in rows
+        if row.role in ("user", "assistant")
+    ]
+
+
+@router.post("/{event_id}/chat/persist")
+async def persist_event_chat_turn(
+    event_id: int,
+    body: EventChatPersistRequest,
+    visitor_id: str = Depends(get_visitor_id),
+    db: SQLAlchemySession = Depends(database.get_db),
+):
+    verify_event_exists(db, event_id)
+    if not body.question.strip() or not body.answer.strip():
+        raise HTTPException(status_code=400, detail="question and answer required")
+    try:
+        user_row = EventChatMessage(
+            event_id=event_id, visitor_id=visitor_id,
+            role="user", content=body.question.strip(),
+        )
+        assistant_row = EventChatMessage(
+            event_id=event_id, visitor_id=visitor_id,
+            role="assistant", content=body.answer.strip(),
+            model_used=body.model_used,
+        )
+        db.add(user_row)
+        db.add(assistant_row)
+        db.commit()
+        return {
+            "ok": True,
+            "message_ids": [user_row.id, assistant_row.id],
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error persisting chat turn for event {event_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to persist chat turn")
+
+
+@router.post("/{event_id}/chat")
+async def chat_about_event(
+    event_id: int,
+    body: EventChatRequest,
+    request: Request,
+    visitor_id: str = Depends(get_visitor_id),
+    db: SQLAlchemySession = Depends(database.get_db),
+):
+    event = verify_event_exists(db, event_id)
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="question required")
+    try:
+        llm = get_llm_chat(request)
+    except HTTPException:
+        raise
+
+    articles = (
+        db.query(Article)
+        .filter(Article.event_id == event_id)
+        .order_by(desc(Article.published_date), desc(Article.id))
+        .limit(app_config.CHAT_CONTEXT_MAX_ARTICLES)
+        .all()
+    )
+    if not articles:
+        raise HTTPException(status_code=400, detail="Event has no articles to chat about")
+
+    latest_summary = (
+        db.query(EventSummary)
+        .filter(EventSummary.event_id == event_id)
+        .order_by(desc(EventSummary.generated_at))
+        .first()
+    )
+    summary_payload = latest_summary.summary_json if latest_summary else None
+
+    sources = [
+        ArticleInEvent(
+            id=a.id, title=a.title, publisher_name=a.publisher_name,
+            published_date=a.published_date, url=a.url, word_count=a.word_count,
+            importance_score=a.importance_score, grouping_confidence=a.grouping_confidence,
+            is_read=False, event_id=a.event_id, event_name=event.name,
+        )
+        for a in articles[:5]
+    ]
+
+    try:
+        messages = chat_module.build_chat_messages(
+            event_name=event.name,
+            summary=summary_payload,
+            articles=articles,
+            chat_history=body.chat_history,
+            question=body.question,
+            per_article_chars=app_config.CHAT_CONTEXT_PER_ARTICLE_CHARS,
+        )
+    except Exception as e:
+        logger.error(f"Error building chat messages for event {event_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to build chat context")
+
+    model_name = app_config.DEFAULT_CHAT_MODEL_NAME
+    sources_payload = [s.model_dump(mode="json") for s in sources]
+
+    async def event_stream():
+        yield chat_module.serialize_sse("meta", {
+            "event_id": event_id,
+            "model_used": model_name,
+            "sources": sources_payload,
+        })
+        try:
+            async for delta in chat_module.astream_chat_answer(llm, messages):
+                if delta:
+                    yield chat_module.serialize_sse("delta", {"text": delta})
+        except Exception as e:
+            logger.error(f"Chat stream error for event {event_id}: {e}", exc_info=True)
+            yield chat_module.serialize_sse("error", {"message": str(e)})
+            return
+        yield chat_module.serialize_sse("done", {"event_id": event_id})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )

@@ -89,7 +89,7 @@ function renderSummaryBubble(summary, stale, eventId) {
       </div>
       <div class="bubble-summary-actions">
         <span class="imp" style="background:var(--info)" title="${dotTitle}"></span>
-        <button class="summary-chat-btn" data-action="chat-with-event" data-event-id="${eventId}" title="Chat with this event (coming soon)">Chat with event</button>
+        <button class="summary-chat-btn" data-action="chat-with-event" data-event-id="${eventId}" title="Chat with this event">Chat with event</button>
       </div>
     </div>
   </div>`;
@@ -134,6 +134,7 @@ function attachSummaryBubbleHandler(pane, eventId) {
   if (chatBtn) {
     chatBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      window.dispatchEvent(new CustomEvent("open-chat", { detail: { eventId } }));
     });
   }
 }

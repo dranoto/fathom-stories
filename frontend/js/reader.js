@@ -1,5 +1,9 @@
 // frontend/js/reader.js
-import { getArticle, getEvent, listEvents, markRead, markUnread, generateEventSummary, assignArticleToEvent, removeArticleFromEvent } from "./apiService.js";
+import {
+  getArticle, getEvent, listEvents, markRead, markUnread,
+  generateEventSummary, assignArticleToEvent, removeArticleFromEvent,
+  fetchEventChatHistory, streamEventChat, persistEventChatTurn,
+} from "./apiService.js";
 import {
   isRead,
   markRead as stateMarkRead,
@@ -15,6 +19,8 @@ import {
 let currentArticle = null;
 let currentSummary = null;
 let currentEventId = null;
+let currentEvent = null;
+let chatAbortController = null;
 
 export function setupReader() {
   const close = document.getElementById("btn-close-reader");
@@ -32,6 +38,11 @@ export function setupReader() {
   window.addEventListener("open-summary", async (e) => {
     const id = e.detail.eventId;
     await openSummary(id);
+  });
+
+  window.addEventListener("open-chat", async (e) => {
+    const id = e.detail.eventId;
+    await openChat(id);
   });
 
   close.addEventListener("click", () => closeReader());
@@ -136,6 +147,11 @@ async function openArticle(id) {
   const orig = document.getElementById("reader-original");
   const toggle = document.getElementById("btn-toggle-read");
 
+  if (chatAbortController) {
+    chatAbortController.abort();
+    chatAbortController = null;
+  }
+  body.classList.remove("chat-mode");
   body.innerHTML = `<div class="pane-empty">Loading…</div>`;
   pane.hidden = false;
   const picker = document.getElementById("reader-event-picker");
@@ -159,6 +175,7 @@ async function openArticle(id) {
   source.textContent = `${article.publisher_name || ""} · ${article.published_date ? new Date(article.published_date).toLocaleString() : ""}`;
   orig.href = article.url;
   orig.style.display = "";
+  toggle.style.display = "";
 
   const html = article.full_html_content || `<pre>${escapeHtml(article.scraped_text_content || article.rss_description || "")}</pre>`;
   body.innerHTML = `
@@ -287,14 +304,22 @@ function setupRemoveButton(article) {
 }
 
 export function closeReader() {
+  if (chatAbortController) {
+    chatAbortController.abort();
+    chatAbortController = null;
+  }
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
+  const body = document.getElementById("reader-body");
+  if (body) body.classList.remove("chat-mode");
   pane.hidden = true;
   main.classList.remove("has-reader");
   currentArticle = null;
   currentSummary = null;
   currentEventId = null;
+  currentEvent = null;
   setCurrentArticleId(null);
+  showReaderExtras();
   const picker = document.getElementById("reader-event-picker");
   if (picker) picker.hidden = true;
   const removeBtn = document.getElementById("btn-remove-from-event");
@@ -313,11 +338,17 @@ async function openSummary(eventId) {
   const orig = document.getElementById("reader-original");
   const toggle = document.getElementById("btn-toggle-read");
 
+  if (chatAbortController) {
+    chatAbortController.abort();
+    chatAbortController = null;
+  }
+  body.classList.remove("chat-mode");
   body.innerHTML = `<div class="pane-empty">Loading summary…</div>`;
   pane.hidden = false;
   main.classList.add("has-reader");
   const removeBtn = document.getElementById("btn-remove-from-event");
   if (removeBtn) removeBtn.hidden = true;
+  showReaderExtras();
   currentArticle = null;
   currentEventId = eventId;
   setCurrentArticleId(null);
@@ -398,6 +429,230 @@ async function regenerateSummary() {
     toggle.disabled = false;
     toggle.textContent = orig;
   }
+}
+
+function renderChatMarkdown(text) {
+  if (!text) return "";
+  if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+    return escapeHtml(text);
+  }
+  try {
+    const html = marked.parse(text, { breaks: true, gfm: true });
+    return DOMPurify.sanitize(html);
+  } catch (e) {
+    return escapeHtml(text);
+  }
+}
+
+function hideReaderExtras() {
+  const orig = document.getElementById("reader-original");
+  if (orig) orig.style.display = "none";
+  const toggle = document.getElementById("btn-toggle-read");
+  if (toggle) toggle.style.display = "none";
+  const removeBtn = document.getElementById("btn-remove-from-event");
+  if (removeBtn) removeBtn.hidden = true;
+  const picker = document.getElementById("reader-event-picker");
+  if (picker) picker.hidden = true;
+}
+
+function showReaderExtras() {
+  const toggle = document.getElementById("btn-toggle-read");
+  if (toggle) toggle.style.display = "";
+}
+
+function buildChatBubble(role, content) {
+  const cls = role === "user" ? "chat-msg-user" : "chat-msg-assistant";
+  const label = role === "user" ? "You" : "AI";
+  const rendered = role === "assistant" ? renderChatMarkdown(content) : escapeHtml(content);
+  return `<div class="chat-msg ${cls}" data-role="${role}"><div class="chat-msg-label">${label}</div><div class="chat-msg-body">${rendered}</div></div>`;
+}
+
+function buildTypingBubble() {
+  return `<div class="chat-msg chat-msg-assistant chat-msg-typing" data-role="assistant"><div class="chat-msg-label">AI</div><div class="chat-msg-body"><span class="chat-typing-dots"><span></span><span></span><span></span></span></div></div>`;
+}
+
+function scrollChatToBottom(container) {
+  if (!container) return;
+  container.scrollTop = container.scrollHeight;
+}
+
+async function openChat(eventId) {
+  const main = document.querySelector(".app-main");
+  const pane = document.getElementById("reader-pane");
+  const body = document.getElementById("reader-body");
+  const source = document.getElementById("reader-source");
+  const toggle = document.getElementById("btn-toggle-read");
+
+  if (chatAbortController) {
+    chatAbortController.abort();
+    chatAbortController = null;
+  }
+
+  body.innerHTML = `<div class="pane-empty">Loading chat…</div>`;
+  body.classList.add("chat-mode");
+  pane.hidden = false;
+  main.classList.add("has-reader");
+  hideReaderExtras();
+  currentArticle = null;
+  currentSummary = null;
+  currentEventId = eventId;
+  setCurrentArticleId(null);
+
+  let event;
+  try {
+    event = await getEvent(eventId);
+  } catch (e) {
+    body.innerHTML = `<div class="pane-empty">Error: ${e.message}</div>`;
+    return;
+  }
+  currentEvent = event;
+  source.textContent = `${event.name} · Chat`;
+  if (toggle) toggle.style.display = "none";
+
+  body.innerHTML = `
+    <div class="chat-header">
+      <h1>${escapeHtml(event.name)}</h1>
+      <div class="chat-header-meta">${event.articles.length} article${event.articles.length === 1 ? "" : "s"} in event</div>
+    </div>
+    <div class="chat-messages" id="chat-messages" role="log" aria-live="polite"></div>
+    <form class="chat-input-row" id="chat-input-form" autocomplete="off">
+      <textarea id="chat-input" class="chat-input" placeholder="Ask about this event…" rows="1" maxlength="4000"></textarea>
+      <button type="submit" id="chat-send-btn" class="btn-primary">Send</button>
+    </form>
+    <div class="chat-actions">
+      <button type="button" id="chat-back-btn" class="btn-link">← Back to summary</button>
+    </div>
+  `;
+
+  const messagesEl = document.getElementById("chat-messages");
+  const formEl = document.getElementById("chat-input-form");
+  const inputEl = document.getElementById("chat-input");
+  const sendBtn = document.getElementById("chat-send-btn");
+  const backBtn = document.getElementById("chat-back-btn");
+
+  backBtn.addEventListener("click", () => {
+    if (chatAbortController) {
+      chatAbortController.abort();
+      chatAbortController = null;
+    }
+    showReaderExtras();
+    openSummary(eventId);
+  });
+
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
+  });
+
+  formEl.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await handleChatSubmit(eventId, messagesEl, inputEl, sendBtn);
+  });
+
+  try {
+    const history = await fetchEventChatHistory(eventId);
+    if (Array.isArray(history) && history.length) {
+      for (const turn of history) {
+        messagesEl.insertAdjacentHTML("beforeend", buildChatBubble(turn.role, turn.content));
+      }
+      scrollChatToBottom(messagesEl);
+    } else {
+      messagesEl.innerHTML = `<div class="chat-empty">Ask anything about this event. Answers are grounded in the ${event.articles.length} article${event.articles.length === 1 ? "" : "s"} in this event.</div>`;
+    }
+  } catch (err) {
+    messagesEl.innerHTML = `<div class="chat-empty chat-empty-error">Couldn't load history: ${escapeHtml(err.message)}</div>`;
+  }
+  inputEl.focus();
+}
+
+async function handleChatSubmit(eventId, messagesEl, inputEl, sendBtn) {
+  const question = inputEl.value.trim();
+  if (!question || sendBtn.disabled) return;
+
+  const emptyEl = messagesEl.querySelector(".chat-empty");
+  if (emptyEl) emptyEl.remove();
+
+  const priorTurns = collectChatHistoryFromDom(messagesEl);
+  const userBubble = buildChatBubble("user", question);
+  messagesEl.insertAdjacentHTML("beforeend", userBubble);
+  inputEl.value = "";
+  inputEl.style.height = "auto";
+  sendBtn.disabled = true;
+  inputEl.disabled = true;
+  const typingBubble = buildTypingBubble();
+  messagesEl.insertAdjacentHTML("beforeend", typingBubble);
+  scrollChatToBottom(messagesEl);
+
+  const assistantEl = document.createElement("div");
+  assistantEl.className = "chat-msg chat-msg-assistant";
+  assistantEl.dataset.role = "assistant";
+  assistantEl.innerHTML = `<div class="chat-msg-label">AI</div><div class="chat-msg-body"></div>`;
+  const bodyEl = assistantEl.querySelector(".chat-msg-body");
+  let fullAnswer = "";
+
+  const controller = new AbortController();
+  chatAbortController = controller;
+
+  try {
+    await streamEventChat(eventId, {
+      question,
+      chat_history: priorTurns,
+    }, {
+      signal: controller.signal,
+      onDelta: (delta) => {
+        fullAnswer += delta;
+        bodyEl.innerHTML = renderChatMarkdown(fullAnswer);
+        scrollChatToBottom(messagesEl);
+      },
+      onError: (err) => {
+        const msg = err && err.message ? err.message : "stream error";
+        bodyEl.innerHTML = `<div class="chat-error">Error: ${escapeHtml(msg)}</div>`;
+      },
+      onDone: () => {},
+    });
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="chat-error">Error: ${escapeHtml(err.message || "stream failed")}</div>`;
+  } finally {
+    if (typingBubble) {
+      const live = messagesEl.querySelector(".chat-msg-typing");
+      if (live) live.remove();
+    }
+    messagesEl.appendChild(assistantEl);
+    scrollChatToBottom(messagesEl);
+    chatAbortController = null;
+    sendBtn.disabled = false;
+    inputEl.disabled = false;
+    inputEl.focus();
+
+    if (fullAnswer.trim()) {
+      try {
+        await persistEventChatTurn(eventId, {
+          question,
+          answer: fullAnswer,
+        });
+      } catch (e) {
+        console.warn("chat persist failed:", e);
+      }
+    }
+  }
+}
+
+function collectChatHistoryFromDom(messagesEl) {
+  const out = [];
+  for (const el of messagesEl.querySelectorAll(".chat-msg")) {
+    const role = el.dataset.role;
+    if (role !== "user" && role !== "assistant") continue;
+    const bodyEl = el.querySelector(".chat-msg-body");
+    if (!bodyEl) continue;
+    out.push({ role, content: bodyEl.textContent || "" });
+  }
+  return out;
 }
 
 function formatDate(d) {

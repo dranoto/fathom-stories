@@ -16,11 +16,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///./{SQLITE_DB_SUBDIR}/{SQLIT
 # --- LLM Configuration ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-DEFAULT_SUMMARY_MODEL_NAME = os.getenv("DEFAULT_SUMMARY_MODEL_NAME", "gpt-4o-mini")
-DEFAULT_GROUPING_MODEL_NAME = os.getenv("DEFAULT_GROUPING_MODEL_NAME", "gpt-4o-mini")
+DEFAULT_SUMMARY_MODEL_NAME = os.getenv("DEFAULT_SUMMARY_MODEL_NAME", "xiaomi/mimo-v2.5-pro")
+DEFAULT_GROUPING_MODEL_NAME = os.getenv("DEFAULT_GROUPING_MODEL_NAME", "xiaomi/mimo-v2.5-pro")
+DEFAULT_CHAT_MODEL_NAME = os.getenv("DEFAULT_CHAT_MODEL_NAME", "xiaomi/mimo-v2.5-pro")
 
-SUMMARY_MAX_OUTPUT_TOKENS = int(os.getenv("SUMMARY_MAX_OUTPUT_TOKENS", 8192))
-GROUPING_MAX_OUTPUT_TOKENS = int(os.getenv("GROUPING_MAX_OUTPUT_TOKENS", 4096))
+SUMMARY_MAX_OUTPUT_TOKENS = int(os.getenv("SUMMARY_MAX_OUTPUT_TOKENS", 128000))
+GROUPING_MAX_OUTPUT_TOKENS = int(os.getenv("GROUPING_MAX_OUTPUT_TOKENS", 128000))
+CHAT_MAX_OUTPUT_TOKENS = int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", 8192))
 
 # --- RSS Feed Configuration ---
 rss_feeds_env_str = os.getenv("RSS_FEED_URLS", "")
@@ -147,6 +149,10 @@ except ValueError:
 # --- LLM Temperature Configuration ---
 SUMMARY_LLM_TEMPERATURE = float(os.getenv("SUMMARY_LLM_TEMPERATURE", "0.2"))
 GROUPING_LLM_TEMPERATURE = float(os.getenv("GROUPING_LLM_TEMPERATURE", "0.1"))
+CHAT_LLM_TEMPERATURE = float(os.getenv("CHAT_LLM_TEMPERATURE", "0.85"))
+
+CHAT_CONTEXT_MAX_ARTICLES = int(os.getenv("CHAT_CONTEXT_MAX_ARTICLES", "20"))
+CHAT_CONTEXT_PER_ARTICLE_CHARS = int(os.getenv("CHAT_CONTEXT_PER_ARTICLE_CHARS", "3000"))
 
 # --- Debug Configuration ---
 DEBUG_LEVEL = os.getenv("DEBUG_LEVEL", "standard").lower()
@@ -413,13 +419,31 @@ Return EXACTLY this JSON (no markdown, no extra text):
 If no duplicates, return: {{"merge_pairs": []}}""")
 
 
+DEFAULT_CHAT_PROMPT = os.getenv("DEFAULT_CHAT_PROMPT", """The current time and date are: {current_datetime}
+You are a knowledgeable news analyst. The user is asking about a current developing news event called '{event_name}'. You have access to a collection of articles from multiple sources plus the current event summary. Use them to answer concisely. Cite specific publishers when relevant. If the articles don't contain the answer, say so honestly. Be brief — this is a chat, not an essay.
+
+Event summary (auto-generated from the article set, may be incomplete):
+{summary_block}
+
+Articles in this event (most recent first, excerpts trimmed):
+{articles_block}
+
+Conversation so far:
+{history_block}
+
+User's new question:
+{question}
+
+Answer concisely. Cite publishers inline (e.g. "according to Reuters") only when it adds value. If the answer is not in the provided context, say so.""")
+
+
 if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY environment variable is not set. LLM features will be impaired.")
 
 logger.info(f"CONFIG: DATABASE_URL={DATABASE_URL}")
 logger.info(f"CONFIG: OPENAI_API_KEY set={'yes' if OPENAI_API_KEY else 'no'}")
 logger.info(f"CONFIG: OPENAI_BASE_URL={OPENAI_BASE_URL}")
-logger.info(f"CONFIG: SUMMARY_MODEL={DEFAULT_SUMMARY_MODEL_NAME}, GROUPING_MODEL={DEFAULT_GROUPING_MODEL_NAME}")
+logger.info(f"CONFIG: SUMMARY_MODEL={DEFAULT_SUMMARY_MODEL_NAME}, GROUPING_MODEL={DEFAULT_GROUPING_MODEL_NAME}, CHAT_MODEL={DEFAULT_CHAT_MODEL_NAME}")
 logger.info(f"CONFIG: RSS_FEED_URLS count={len(RSS_FEED_URLS)}")
 logger.info(f"CONFIG: PATH_TO_EXTENSION={PATH_TO_EXTENSION}")
 logger.info(f"CONFIG: USE_HEADLESS_BROWSER={USE_HEADLESS_BROWSER}")

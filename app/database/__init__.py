@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from .models import (
     Base, FeedSource, Article, Event, EventSummary,
     GroupingFeedback, ReclusterProposal, ArticleRead, KVSetting, ScrapeFailure,
+    EventChatMessage,
 )
 from .. import config as app_config
 
@@ -95,6 +96,7 @@ __all__ = [
     "ArticleRead",
     "KVSetting",
     "ScrapeFailure",
+    "EventChatMessage",
     "engine",
     "SessionLocal",
     "create_db_and_tables",

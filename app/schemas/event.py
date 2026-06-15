@@ -1,6 +1,6 @@
 # app/schemas/event.py
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Literal
 from datetime import datetime
 
 from ._serializers import UtcDateTime
@@ -166,3 +166,27 @@ class StatsOut(BaseModel):
     events_archived: int
     proposals_pending: int
     feedback_count: int
+
+
+class ChatHistoryItem(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class EventChatRequest(BaseModel):
+    question: str
+    chat_history: Optional[List[ChatHistoryItem]] = None
+
+
+class EventChatPersistRequest(BaseModel):
+    question: str
+    answer: str
+    model_used: Optional[str] = None
+
+
+class EventChatResponse(BaseModel):
+    event_id: int
+    question: str
+    answer: str
+    model_used: Optional[str] = None
+    sources: List[ArticleInEvent] = []

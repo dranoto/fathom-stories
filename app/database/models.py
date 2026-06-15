@@ -184,5 +184,21 @@ class KVSetting(Base):
         return f"<KVSetting(key='{self.key}', value='{(self.value or '')[:40]}')>"
 
 
+class EventChatMessage(Base):
+    __tablename__ = "event_chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete='CASCADE'), nullable=False, index=True)
+    visitor_id = Column(String(VISITOR_ID_LENGTH), nullable=False, index=True)
+    role = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    model_used = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<EventChatMessage(id={self.id}, event_id={self.event_id}, role='{self.role}', visitor_id='{self.visitor_id}')>"
+
+
 Index("ix_articles_event_published", Article.event_id, Article.published_date)
 Index("ix_events_status_last_article", Event.status, Event.last_article_at)
+Index("ix_event_chat_messages_event_visitor_created", EventChatMessage.event_id, EventChatMessage.visitor_id, EventChatMessage.created_at)
