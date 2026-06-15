@@ -22,6 +22,7 @@ export async function renderActiveEventPane(eventId) {
   const lastSummary = summary && summary.generated_at ? new Date(summary.generated_at) : null;
   const lastArticleAt = ev.last_article_at ? new Date(ev.last_article_at) : null;
   const summaryStale = lastSummary && lastArticleAt && lastArticleAt > lastSummary;
+  const expiresAt = ev.expires_at ? new Date(ev.expires_at) : null;
 
   const summaryBubble = renderSummaryBubble(summary, summaryStale, eventId);
   const articleBubbles = articles.length === 0
@@ -31,6 +32,14 @@ export async function renderActiveEventPane(eventId) {
   const html = `
     <div class="event-header">
       <h1>${escapeHtml(ev.name)}</h1>
+      ${expiresAt ? `
+        <div class="expiry-row">
+          <span class="expiry-chip" data-expires-at="${expiresAt.toISOString()}" title="Event auto-archives at ${escapeHtml(expiresAt.toLocaleString())}">
+            <span class="expiry-label">expires in</span>
+            <span class="expiry-time">--:--</span>
+          </span>
+        </div>
+      ` : ""}
       <div class="meta">
         <span>${ev.article_count || articles.length} articles</span>
         ${ev.last_article_at ? `<span>last: ${formatRelative(new Date(ev.last_article_at))}</span>` : ""}
@@ -45,6 +54,7 @@ export async function renderActiveEventPane(eventId) {
   pane.innerHTML = html;
   attachBubbleHandlers(pane, eventId);
   attachSummaryBubbleHandler(pane, eventId);
+  if (expiresAt) startExpiryCountdown(pane, expiresAt);
 }
 
 function renderSummaryBubble(summary, stale, eventId) {
@@ -129,6 +139,45 @@ function formatRelative(d) {
 function formatDate(d) {
   if (typeof d === "string") d = new Date(d);
   return d.toLocaleString();
+}
+
+let _expiryTimer = null;
+
+function startExpiryCountdown(pane, expiresAt) {
+  if (_expiryTimer) {
+    clearInterval(_expiryTimer);
+    _expiryTimer = null;
+  }
+  const chip = pane.querySelector(".expiry-chip");
+  const timeEl = chip && chip.querySelector(".expiry-time");
+  if (!chip || !timeEl) return;
+
+  function formatMs(ms) {
+    if (ms === null || ms === undefined || isNaN(ms)) return "--:--";
+    if (ms <= 0) return "due";
+    const total = Math.floor(ms / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h >= 24) {
+      const d = Math.floor(h / 24);
+      const rh = h % 24;
+      return `${d}d ${rh}h`;
+    }
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function tick() {
+    const now = Date.now();
+    const ms = expiresAt.getTime() - now;
+    timeEl.textContent = formatMs(ms);
+    chip.classList.toggle("due", ms > 0 && ms < 60 * 60 * 1000);
+    chip.classList.toggle("expired", ms <= 0);
+  }
+
+  tick();
+  _expiryTimer = setInterval(tick, 1000);
 }
 
 export async function renderInboxPane() {

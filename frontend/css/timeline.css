@@ -24,6 +24,42 @@
   display: flex;
   gap: 12px;
 }
+.expiry-row {
+  margin-bottom: 6px;
+}
+.expiry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.expiry-chip .expiry-label {
+  color: var(--text-dim);
+}
+.expiry-chip .expiry-time {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.expiry-chip.due {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
+}
+.expiry-chip.due .expiry-time {
+  color: var(--warn);
+}
+.expiry-chip.expired {
+  border-color: var(--danger, #d9534f);
+  background: color-mix(in srgb, var(--danger, #d9534f) 15%, var(--bg-elev));
+}
+.expiry-chip.expired .expiry-time {
+  color: var(--danger, #d9534f);
+}
 
 .summary-card {
   background: var(--bg-elev);
