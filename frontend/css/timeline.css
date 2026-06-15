@@ -229,6 +229,9 @@
   border-color: var(--info);
   border-width: 2px;
   background: linear-gradient(135deg, var(--bg-elev) 0%, rgba(96, 165, 250, 0.08) 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .bubble.summary-bubble:hover {
   background: linear-gradient(135deg, var(--bg-elev-2) 0%, rgba(96, 165, 250, 0.15) 100%);
@@ -239,4 +242,34 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
   font-size: 12px;
+  margin-bottom: 0;
+}
+.bubble-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bubble-summary-actions .imp {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--info);
+  flex-shrink: 0;
+}
+.summary-chat-btn {
+  background: transparent;
+  border: 1px solid var(--info);
+  color: var(--info);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.summary-chat-btn:hover {
+  background: var(--info);
+  color: var(--bg);
 }

@@ -511,6 +511,7 @@ body {
     display: flex;
     flex-shrink: 0;
   }
+  #btn-close-reader { display: none; }
   .app-main.has-reader {
     grid-template-columns: 1fr min(60%, 720px);
   }

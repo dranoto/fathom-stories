@@ -58,26 +58,15 @@ export async function renderActiveEventPane(eventId) {
 }
 
 function renderSummaryBubble(summary, stale, eventId) {
-  if (!summary) {
-    return `<div class="timeline-row summary-row">
-      <div class="ts">—</div>
-      <div class="bubble summary-bubble size-md" data-summary-id="${eventId}">
-        <div class="bubble-title">Event Summary</div>
-        <div class="bubble-meta">
-          <span style="color:var(--warn)">no summary yet — will be auto-generated</span>
-        </div>
-      </div>
-    </div>`;
-  }
-  const staleLabel = stale ? `<span style="color:var(--warn)">new articles since last summary</span>` : "";
+  const version = summary ? (summary.article_count || 0) : 0;
+  const dotTitle = summary ? `v${version}` : "pending generation";
   return `<div class="timeline-row summary-row">
     <div class="ts">summary</div>
     <div class="bubble summary-bubble size-lg" data-summary-id="${eventId}">
       <div class="bubble-title">Event Summary</div>
-      <div class="bubble-meta">
-        <span class="imp" style="background:var(--info)" title="v${summary.article_count || 0}"></span>
-        <span>${escapeHtml((summary.progressive_summary || "").slice(0, 100))}${(summary.progressive_summary || "").length > 100 ? "…" : ""}</span>
-        ${staleLabel}
+      <div class="bubble-summary-actions">
+        <span class="imp" style="background:var(--info)" title="${dotTitle}"></span>
+        <button class="summary-chat-btn" data-action="chat-with-event" data-event-id="${eventId}" title="Chat with this event (coming soon)">Chat with event</button>
       </div>
     </div>
   </div>`;
@@ -117,6 +106,12 @@ function attachSummaryBubbleHandler(pane, eventId) {
   bubble.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
   });
+  const chatBtn = pane.querySelector(".summary-chat-btn");
+  if (chatBtn) {
+    chatBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
 }
 
 function escapeHtml(s) {

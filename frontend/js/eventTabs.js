@@ -76,3 +76,17 @@ export { INBOX_ID };
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+let wheelHandlerAttached = false;
+
+export function setupEventTabs() {
+  if (wheelHandlerAttached) return;
+  const tabs = document.getElementById("event-tabs");
+  if (!tabs) return;
+  wheelHandlerAttached = true;
+  tabs.addEventListener("wheel", (e) => {
+    if (e.deltaY === 0 && e.deltaX === 0) return;
+    e.preventDefault();
+    tabs.scrollLeft += e.deltaY + e.deltaX;
+  }, { passive: false });
+}

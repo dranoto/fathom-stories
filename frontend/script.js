@@ -6,7 +6,7 @@ import {
   setEvents, getEvents, setReadIds, setActiveEventId,
   getActiveEventId, setInboxOpen, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
-import { renderEventTabs } from "./js/eventTabs.js";
+import { renderEventTabs, setupEventTabs } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
 import { setupSearch } from "./js/search.js";
@@ -31,17 +31,13 @@ async function refreshEvents() {
 
   const activeId = getActiveEventId();
   if (getInboxOpen()) {
-    await renderInboxPane();
+    await selectInboxTab();
   } else if (activeId && all.some(e => e.id === activeId)) {
-    await renderActiveEventPane(activeId);
+    await selectEventTab(activeId);
   } else if (all.length > 0) {
-    setActiveEventId(all[0].id);
-    renderEventTabs(onTabSelect, onInboxSelect);
-    await renderActiveEventPane(all[0].id);
+    await selectEventTab(all[0].id);
   } else {
-    setInboxOpen(true);
-    renderEventTabs(onTabSelect, onInboxSelect);
-    await renderInboxPane();
+    await selectInboxTab();
   }
 }
 
@@ -146,6 +142,7 @@ async function bootstrap() {
   loadFontSize();
   setupReader();
   setupSearch();
+  setupEventTabs();
   setupMobileMenu(() => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
   registerServiceWorker();
 

@@ -216,7 +216,12 @@ async function renderEventPicker(article) {
           window.dispatchEvent(new CustomEvent("article-moved", { detail: { articleId: article.id, eventId: evId } }));
         }
         btn.textContent = "Done ✓";
-        setTimeout(() => closeReader(), 800);
+        if (!res.already_in) {
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: evId } }));
+            window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: article.id } }));
+          }, 800);
+        }
       } catch (e) {
         status.textContent = "Error: " + e.message;
         btn.disabled = false;
@@ -245,6 +250,7 @@ function setupRemoveButton(article) {
     try {
       const res = await removeArticleFromEvent(article.event_id, article.id);
       btn.textContent = "Done ✓";
+      const targetEventId = article.event_id;
       window.dispatchEvent(new CustomEvent("article-removed", {
         detail: {
           articleId: article.id,
@@ -252,7 +258,10 @@ function setupRemoveButton(article) {
           disbanded: !!res.disbanded,
         },
       }));
-      setTimeout(() => closeReader(), 600);
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: targetEventId } }));
+        window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: targetEventId } }));
+      }, 600);
     } catch (e) {
       alert("Failed: " + e.message);
       btn.disabled = false;
