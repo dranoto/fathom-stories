@@ -294,6 +294,10 @@ export function setupMobileMenu(onAfterRefresh) {
   const close = document.getElementById("btn-menu-close");
   const backdrop = document.getElementById("mobile-menu-backdrop");
   if (btn) btn.addEventListener("click", async () => {
+    if (isOpen) {
+      closeMenu();
+      return;
+    }
     await Promise.all([refreshCachedStats(), refreshCachedFeeds()]);
     openMenu();
   });
