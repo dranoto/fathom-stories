@@ -19,22 +19,25 @@ export function toggleMinorDrawer() {
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
 }
 
-export async function selectEventTab(eventId) {
+export async function selectEventTab(eventId, { skipOpen = false } = {}) {
   setInboxOpen(false);
   setActiveEventId(eventId);
   markEventVisited(eventId).catch(() => {});
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
+  if (!skipOpen && isDesktopLayout()) {
+    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
+  }
 }
 
-export async function selectInboxTab() {
+export async function selectInboxTab({ skipOpen = false } = {}) {
   setInboxOpen(true);
   setActiveEventId(null);
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderInboxPane();
-  if (isDesktopLayout()) {
+  if (!skipOpen && isDesktopLayout()) {
     const articles = getUngroupedArticles();
     if (articles.length > 0) {
       window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: articles[0].id } }));

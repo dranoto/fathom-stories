@@ -32,22 +32,18 @@ async function refreshEvents() {
 
   const activeId = getActiveEventId();
   if (getInboxOpen()) {
-    await selectInboxTab();
+    await selectInboxTab({ skipOpen: true });
   } else if (activeId && all.some(e => e.id === activeId)) {
-    await selectEventTab(activeId);
+    await selectEventTab(activeId, { skipOpen: true });
   } else if (all.length > 0) {
-    await selectEventTab(all[0].id);
+    await selectEventTab(all[0].id, { skipOpen: true });
   } else {
-    await selectInboxTab();
+    await selectInboxTab({ skipOpen: true });
   }
 }
 
 async function onTabSelect(eventId) {
   await selectEventTab(eventId);
-  console.log("onTabSelect: dispatching open-summary for", eventId, "isDesktop:", isDesktopLayout());
-  if (isDesktopLayout()) {
-    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
-  }
 }
 
 async function onInboxSelect() {
