@@ -132,6 +132,7 @@ body {
   flex-direction: row;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: visible;
   align-items: stretch;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
