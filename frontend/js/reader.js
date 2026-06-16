@@ -14,6 +14,7 @@ import {
   setCurrentArticleId,
   getActiveEventDetail,
   markEventRegenerating,
+  setMinorDrawerOpen,
 } from "./state.js";
 import { isDesktopLayout } from "./layout.js";
 
@@ -22,6 +23,13 @@ let currentSummary = null;
 let currentEventId = null;
 let currentEvent = null;
 let chatAbortController = null;
+
+function _closeDrawerOnMobile() {
+  if (isDesktopLayout()) return;
+  setMinorDrawerOpen(false);
+  const drawerEl = document.querySelector(".minor-drawer");
+  if (drawerEl) drawerEl.setAttribute("data-open", "0");
+}
 
 export function setupReader() {
   const close = document.getElementById("btn-close-reader");
@@ -32,11 +40,13 @@ export function setupReader() {
   if (removeBtn) removeBtn.hidden = true;
 
   window.addEventListener("open-reader", async (e) => {
+    _closeDrawerOnMobile();
     const id = e.detail.articleId;
     await openArticle(id);
   });
 
   window.addEventListener("open-summary", async (e) => {
+    _closeDrawerOnMobile();
     const id = e.detail.eventId;
     await openSummary(id);
   });

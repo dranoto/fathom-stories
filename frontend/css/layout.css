@@ -362,6 +362,18 @@ body {
 .minor-drawer .event-tab.active .meta { color: rgba(15, 20, 25, 0.75) !important; }
 .minor-drawer .event-tab.active .unread-dot { background: #0f1419 !important; }
 
+.drawer-section-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 4px 4px 2px 4px;
+}
+.drawer-section-header:first-child {
+  padding-top: 0;
+}
+
 @media (max-width: 640px) {
   .event-tab {
     width: 180px;

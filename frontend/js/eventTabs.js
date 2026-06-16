@@ -38,6 +38,7 @@ function _computeTopN(events, viewportWidth) {
 
 export function partitionEvents(events, viewportWidth) {
   const vw = viewportWidth ?? _getViewportWidth();
+  const isMobile = vw < 700;
   if (!events || !events.length) {
     return { topN: [], mostRecent: null, minor: [] };
   }
@@ -51,7 +52,7 @@ export function partitionEvents(events, viewportWidth) {
     return { topN: sortedByCount.slice(0, 3), mostRecent: null, minor: [] };
   }
   const mostRecent = events.reduce((acc, e) => (_ts(e.created_at) > _ts(acc.created_at) ? e : acc), events[0]);
-  const N = _computeTopN(events, vw);
+  const N = isMobile ? 3 : _computeTopN(events, vw);
   const topN = [];
   for (const e of sortedByCount) {
     if (e.id === mostRecent.id) continue;
@@ -134,15 +135,18 @@ function _mostRecentMarkup(e, activeId, inboxOpen) {
   </div>`;
 }
 
-function _minorToggleMarkup(minor, drawerOpen, activeId, inboxOpen) {
+function _minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen) {
   const chev = drawerOpen ? "▴" : "▾";
-  const activeInMinor = !drawerOpen && !inboxOpen && activeId != null &&
-    minor.some((e) => e.id === activeId);
-  const cls = ["event-tab", "minor-toggle", activeInMinor ? "active" : ""]
+  const isDesk = isDesktopLayout();
+  const label = isDesk
+    ? `${totalCount} Minor Event${totalCount === 1 ? "" : "s"}`
+    : `${totalCount} Event${totalCount === 1 ? "" : "s"}`;
+  const activeInDrawer = !drawerOpen && !inboxOpen && activeId != null;
+  const cls = ["event-tab", "minor-toggle", activeInDrawer ? "active" : ""]
     .filter(Boolean)
     .join(" ");
-  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${minor.length} more event${minor.length === 1 ? "" : "s"}">
-    <div class="name two-line"><span>${minor.length} Minor Event${minor.length === 1 ? "" : "s"}</span><span class="minor-toggle-chev">${chev}</span></div>
+  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${totalCount} event${totalCount === 1 ? "" : "s"}">
+    <div class="name two-line"><span>${label}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">click to ${drawerOpen ? "hide" : "show"}</div>
   </div>`;
 }
@@ -182,15 +186,31 @@ function _positionDrawer() {
   _drawerEl.style.width = drawerWidth + "px";
 }
 
-function _renderDrawer(minor, drawerOpen) {
-  if (minor.length === 0) {
+function _renderDrawer(topN, mostRecent, minor, drawerOpen) {
+  if (topN.length === 0 && !mostRecent && minor.length === 0) {
     _removeDrawerEl();
     return;
   }
   const el = _ensureDrawerEl();
   el.setAttribute("data-open", drawerOpen ? "1" : "0");
   el.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
-  el.innerHTML = minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
+  let cardsHtml = "";
+  if (!isDesktopLayout()) {
+    if (topN.length > 0) {
+      cardsHtml += '<div class="drawer-section-header">Top Events</div>';
+      cardsHtml += topN.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
+    }
+    if (mostRecent) {
+      cardsHtml += _mostRecentMarkup(mostRecent, getActiveEventId(), false);
+    }
+    if (minor.length > 0) {
+      cardsHtml += '<div class="drawer-section-header">More Events</div>';
+      cardsHtml += minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
+    }
+  } else {
+    cardsHtml = minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
+  }
+  el.innerHTML = cardsHtml;
   el.querySelectorAll(".event-tab[data-event-id]").forEach((card) => {
     card.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -223,19 +243,26 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
   }
 
   const { topN, mostRecent, minor } = partitionEvents(events);
+  const isDesk = isDesktopLayout();
 
   const parts = [];
   parts.push('<div class="event-bar-row">');
   parts.push(_inboxMarkup(activeId, inboxOpen, inboxN, inboxU));
-  for (let i = 0; i < topN.length; i++) {
-    const group = i === 0 ? "top-start" : "top";
-    parts.push(_cardMarkup(topN[i], activeId, inboxOpen, group));
+  if (isDesk) {
+    for (let i = 0; i < topN.length; i++) {
+      const group = i === 0 ? "top-start" : "top";
+      parts.push(_cardMarkup(topN[i], activeId, inboxOpen, group));
+    }
+    if (mostRecent) {
+      parts.push(_mostRecentMarkup(mostRecent, activeId, inboxOpen));
+    }
   }
-  if (mostRecent) {
-    parts.push(_mostRecentMarkup(mostRecent, activeId, inboxOpen));
-  }
-  if (minor.length > 0) {
-    parts.push(_minorToggleMarkup(minor, drawerOpen, activeId, inboxOpen));
+  const totalCount = isDesk
+    ? minor.length
+    : topN.length + (mostRecent ? 1 : 0) + minor.length;
+  const showToggle = isDesk ? minor.length > 0 : events.length > 0;
+  if (showToggle) {
+    parts.push(_minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen));
   }
   parts.push("</div>");
 
@@ -262,7 +289,7 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     });
   });
 
-  _renderDrawer(minor, drawerOpen);
+  _renderDrawer(topN, mostRecent, minor, drawerOpen);
 }
 
 export { INBOX_ID };
