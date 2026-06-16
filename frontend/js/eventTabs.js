@@ -136,13 +136,14 @@ function _mostRecentMarkup(e, activeId, inboxOpen) {
   </div>`;
 }
 
-function _minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen) {
+function _minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen, drawerEventIds) {
   const chev = drawerOpen ? "▴" : "▾";
   const isDesk = isDesktopLayout();
   const label = isDesk
     ? `${totalCount} Minor Event${totalCount === 1 ? "" : "s"}`
     : `${totalCount} Event${totalCount === 1 ? "" : "s"}`;
-  const activeInDrawer = !drawerOpen && !inboxOpen && activeId != null;
+  const activeInDrawer = !drawerOpen && !inboxOpen && activeId != null &&
+    drawerEventIds.has(activeId);
   const cls = ["event-tab", "minor-toggle", activeInDrawer ? "active" : ""]
     .filter(Boolean)
     .join(" ");
@@ -263,7 +264,14 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     : topN.length + (mostRecent ? 1 : 0) + minor.length;
   const showToggle = isDesk ? minor.length > 0 : events.length > 0;
   if (showToggle) {
-    parts.push(_minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen));
+    const drawerEventIds = isDesk
+      ? new Set(minor.map((e) => e.id))
+      : new Set([
+          ...topN.map((e) => e.id),
+          ...(mostRecent ? [mostRecent.id] : []),
+          ...minor.map((e) => e.id),
+        ]);
+    parts.push(_minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen, drawerEventIds));
   }
   parts.push("</div>");
 
