@@ -11,15 +11,35 @@ import {
 
 const INBOX_ID = "__inbox__";
 
+const CARD_WIDTH = 180;
+const GAP_WIDTH = 8;
+const CONTAINER_PADDING = 24;
+const MANDATORY_CARDS = 3;
+
 function _ts(v) {
   if (!v) return 0;
   const t = new Date(v).getTime();
   return Number.isFinite(t) ? t : 0;
 }
 
-export function partitionEvents(events) {
+function _getViewportWidth() {
+  if (typeof window === "undefined") return 1200;
+  return window.innerWidth || document.documentElement.clientWidth || 1200;
+}
+
+function _computeTopN(events, viewportWidth) {
+  if (events.length <= 3) return events.length;
+  const totalPerTop = CARD_WIDTH + GAP_WIDTH;
+  const fixed = CONTAINER_PADDING + MANDATORY_CARDS * CARD_WIDTH + (MANDATORY_CARDS - 1) * GAP_WIDTH;
+  const available = viewportWidth - fixed;
+  const maxN = Math.max(0, Math.floor(available / totalPerTop));
+  return Math.min(maxN, events.length - 1);
+}
+
+export function partitionEvents(events, viewportWidth) {
+  const vw = viewportWidth ?? _getViewportWidth();
   if (!events || !events.length) {
-    return { top3: [], mostRecent: null, minor: [] };
+    return { topN: [], mostRecent: null, minor: [] };
   }
   const sortedByCount = [...events].sort((a, b) => {
     const ac = a.article_count || 0;
@@ -28,18 +48,19 @@ export function partitionEvents(events) {
     return _ts(b.last_article_at) - _ts(a.last_article_at);
   });
   if (events.length <= 3) {
-    return { top3: sortedByCount.slice(0, 3), mostRecent: null, minor: [] };
+    return { topN: sortedByCount.slice(0, 3), mostRecent: null, minor: [] };
   }
   const mostRecent = events.reduce((acc, e) => (_ts(e.created_at) > _ts(acc.created_at) ? e : acc), events[0]);
-  const top3 = [];
+  const N = _computeTopN(events, vw);
+  const topN = [];
   for (const e of sortedByCount) {
     if (e.id === mostRecent.id) continue;
-    top3.push(e);
-    if (top3.length === 3) break;
+    topN.push(e);
+    if (topN.length >= N) break;
   }
-  const shown = new Set([...top3.map((e) => e.id), mostRecent.id]);
+  const shown = new Set([...topN.map((e) => e.id), mostRecent.id]);
   const minor = events.filter((e) => !shown.has(e.id));
-  return { top3, mostRecent, minor };
+  return { topN, mostRecent, minor };
 }
 
 function _cardMarkup(e, activeId, inboxOpen) {
@@ -125,7 +146,10 @@ function _drawerMarkup(minor, drawerOpen) {
   return `<div class="minor-drawer" data-open="${drawerOpen ? "1" : "0"}" aria-hidden="${drawerOpen ? "false" : "true"}">${cards}</div>`;
 }
 
-export function renderEventTabs(onSelectEvent, onSelectInbox) {
+let _lastCallbacks = null;
+
+export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
+  _lastCallbacks = { onSelectEvent, onSelectInbox, onToggleMinor };
   const container = document.getElementById("event-tabs");
   if (!container) return;
   const events = getEvents();
@@ -139,12 +163,12 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
     return;
   }
 
-  const { top3, mostRecent, minor } = partitionEvents(events);
+  const { topN, mostRecent, minor } = partitionEvents(events);
 
   const parts = [];
   parts.push('<div class="event-bar-row">');
   parts.push(_inboxMarkup(activeId, inboxOpen, inboxN, inboxU));
-  for (const e of top3) {
+  for (const e of topN) {
     parts.push(_cardMarkup(e, activeId, inboxOpen));
   }
   if (mostRecent) {
@@ -172,7 +196,12 @@ export function renderEventTabs(onSelectEvent, onSelectInbox) {
   });
   container.querySelectorAll(".event-tab[data-minor-toggle]").forEach((el) => {
     el.addEventListener("click", () => {
-      setMinorDrawerOpen(!getMinorDrawerOpen());
+      if (typeof onToggleMinor === "function") {
+        onToggleMinor();
+      } else {
+        setMinorDrawerOpen(!getMinorDrawerOpen());
+        renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor);
+      }
     });
   });
 }
@@ -183,12 +212,14 @@ export function escapeHtml(s) {
 }
 
 let wheelHandlerAttached = false;
+let resizeDebounceTimer = null;
 
 export function setupEventTabs() {
   if (wheelHandlerAttached) return;
   const tabs = document.getElementById("event-tabs");
   if (!tabs) return;
   wheelHandlerAttached = true;
+
   const barRow = tabs.querySelector(".event-bar-row") || tabs;
   barRow.addEventListener(
     "wheel",
@@ -199,4 +230,18 @@ export function setupEventTabs() {
     },
     { passive: false }
   );
+
+  window.addEventListener("resize", () => {
+    if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      resizeDebounceTimer = null;
+      if (_lastCallbacks) {
+        renderEventTabs(
+          _lastCallbacks.onSelectEvent,
+          _lastCallbacks.onSelectInbox,
+          _lastCallbacks.onToggleMinor
+        );
+      }
+    }, 120);
+  });
 }

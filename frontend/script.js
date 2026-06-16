@@ -16,7 +16,7 @@ import { startCountdowns } from "./js/countdowns.js";
 import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
 import { registerServiceWorker } from "./js/pwa.js";
 import { setupSwipeNav } from "./js/swipeNav.js";
-import { selectEventTab, selectInboxTab } from "./js/tabActions.js";
+import { selectEventTab, selectInboxTab, toggleMinorDrawer } from "./js/tabActions.js";
 import { isDesktopLayout } from "./js/layout.js";
 
 async function refreshEvents() {
@@ -28,7 +28,7 @@ async function refreshEvents() {
     setStatus("error", `load failed: ${e.message}`);
     return;
   }
-  renderEventTabs(onTabSelect, onInboxSelect);
+  renderEventTabs(onTabSelect, onInboxSelect, toggleMinorDrawer);
 
   const activeId = getActiveEventId();
   if (getInboxOpen()) {
@@ -89,7 +89,7 @@ async function refreshInboxCounts() {
     const read = articles.filter(a => a.is_read).length;
     const unread = total - read;
     setInboxCounts(total, read, unread);
-    renderEventTabs(onTabSelect, onInboxSelect);
+    renderEventTabs(onTabSelect, onInboxSelect, toggleMinorDrawer);
   } catch (e) {
     console.warn("inbox counts fetch failed:", e);
   }
@@ -178,7 +178,7 @@ async function bootstrap() {
   });
 
   window.addEventListener("read-state-changed", () => {
-    renderEventTabs(onTabSelect, onInboxSelect);
+    renderEventTabs(onTabSelect, onInboxSelect, toggleMinorDrawer);
   });
 
   window.addEventListener("reader-closed", async () => {

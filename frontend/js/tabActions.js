@@ -1,6 +1,6 @@
 // frontend/js/tabActions.js
 import { markEventVisited } from "./apiService.js";
-import { setInboxOpen, getInboxOpen, setActiveEventId, getActiveEventId, getEvents, getUngroupedArticles } from "./state.js";
+import { setInboxOpen, getInboxOpen, setActiveEventId, getActiveEventId, getEvents, getUngroupedArticles, setMinorDrawerOpen, getMinorDrawerOpen } from "./state.js";
 import { renderEventTabs } from "./eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./timeline.js";
 
@@ -13,11 +13,16 @@ function scrollActiveTabIntoView() {
   });
 }
 
+export function toggleMinorDrawer() {
+  setMinorDrawerOpen(!getMinorDrawerOpen());
+  renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
+}
+
 export async function selectEventTab(eventId) {
   setInboxOpen(false);
   setActiveEventId(eventId);
   markEventVisited(eventId).catch(() => {});
-  renderEventTabs(selectEventTab, selectInboxTab);
+  renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
 }
@@ -25,7 +30,7 @@ export async function selectEventTab(eventId) {
 export async function selectInboxTab() {
   setInboxOpen(true);
   setActiveEventId(null);
-  renderEventTabs(selectEventTab, selectInboxTab);
+  renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderInboxPane();
   const articles = getUngroupedArticles();
@@ -48,7 +53,7 @@ window.addEventListener("navigate-to-event", async (e) => {
   setInboxOpen(false);
   setActiveEventId(eventId);
   markEventVisited(eventId).catch(() => {});
-  renderEventTabs(selectEventTab, selectInboxTab);
+  renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
 });
