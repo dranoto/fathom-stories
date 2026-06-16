@@ -113,6 +113,28 @@ except ValueError:
     logger.warning("Invalid PURGE_EMPTY_FLOOR_SECONDS in .env. Using default 30.")
     PURGE_EMPTY_FLOOR_SECONDS = 30
 
+# --- Shaped-score ranking ---
+try:
+    SCORE_LOG_BASE = float(os.getenv("SCORE_LOG_BASE", "2.0"))
+except ValueError:
+    logger.warning("Invalid SCORE_LOG_BASE in .env. Using default 2.0.")
+    SCORE_LOG_BASE = 2.0
+try:
+    SCORE_FRESHNESS_HALF_LIFE_HOURS = float(os.getenv("SCORE_FRESHNESS_HALF_LIFE_HOURS", "8"))
+except ValueError:
+    logger.warning("Invalid SCORE_FRESHNESS_HALF_LIFE_HOURS in .env. Using default 8.")
+    SCORE_FRESHNESS_HALF_LIFE_HOURS = 8.0
+try:
+    SCORE_IMPORTANCE_FLOOR = float(os.getenv("SCORE_IMPORTANCE_FLOOR", "0.5"))
+except ValueError:
+    logger.warning("Invalid SCORE_IMPORTANCE_FLOOR in .env. Using default 0.5.")
+    SCORE_IMPORTANCE_FLOOR = 0.5
+try:
+    SCORE_MAGNITUDE_CAP = float(os.getenv("SCORE_MAGNITUDE_CAP", "6.0"))
+except ValueError:
+    logger.warning("Invalid SCORE_MAGNITUDE_CAP in .env. Using default 6.0.")
+    SCORE_MAGNITUDE_CAP = 6.0
+
 # --- Scraper Configuration ---
 USER_AGENT = os.getenv(
     "PLAYWRIGHT_USER_AGENT",

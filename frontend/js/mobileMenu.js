@@ -1,6 +1,12 @@
 // frontend/js/mobileMenu.js
-import { runFetch, runRegroup, runGrouping, stats, listFeeds, addFeed, removeFeed, pauseFeed, unpauseFeed, refreshFeed } from "./apiService.js";
-import { getInboxCounts, getEvents, setEvents } from "./state.js";
+import { runFetch, runRegroup, runGrouping, stats, listFeeds, addFeed, removeFeed, pauseFeed, unpauseFeed, refreshFeed, listEvents } from "./apiService.js";
+import {
+  getInboxCounts, getEvents, setEvents,
+  getSortMode, setSortMode, getScoreKnobs, setScoreKnobs, resetScoreKnobs, SCORE_DEFAULTS,
+  getMinorDrawerOpen, setMinorDrawerOpen,
+} from "./state.js";
+import { sortEventsByScore, computeEventScore } from "./score.js";
+import { selectEventTab, selectInboxTab, toggleMinorDrawer } from "./tabActions.js";
 import { loadTheme, toggleTheme, currentTheme } from "./theme.js";
 import { getFontSize, setFontSize } from "./fontSize.js";
 import { getPwaInstallState, installPwa } from "./pwa.js";
@@ -109,6 +115,7 @@ function buildMenuBody() {
         </div>
       </div>
     </div>
+    ${buildSortSection()}
     <div class="menu-section">
       <div class="menu-section-header">
         <span class="menu-section-title">Actions</span>
@@ -131,6 +138,75 @@ function buildMenuBody() {
     </div>
     ${feedsBlock}
   `;
+}
+
+function _sliderRow(id, label, min, max, step, value, hint) {
+  const v = Number.isFinite(value) ? value : 0;
+  return `<div class="menu-knob-row">
+    <div class="menu-knob-head">
+      <span class="menu-knob-label">${escapeHtml(label)}</span>
+      <span class="menu-knob-value" data-knob-value-for="${id}">${v.toFixed(step < 1 ? 2 : 0)}</span>
+    </div>
+    <input class="menu-knob-slider" type="range" data-action="knob" data-knob="${id}" min="${min}" max="${max}" step="${step}" value="${v}" aria-label="${escapeHtml(label)}">
+    <div class="menu-knob-hint">${escapeHtml(hint)}</div>
+  </div>`;
+}
+
+function buildSortSection() {
+  const mode = getSortMode();
+  const knobs = getScoreKnobs();
+  const isShaped = mode === "score";
+  const normalPill = `<button class="menu-appearance-btn${!isShaped ? " active" : ""}" data-action="sort-mode" data-sort-mode="normal">Normal</button>`;
+  const shapedPill = `<button class="menu-appearance-btn${isShaped ? " active" : ""}" data-action="sort-mode" data-sort-mode="score">Shaped</button>`;
+  const tunerStyle = isShaped ? "" : " hidden";
+  const tuner = `<div class="menu-knob-panel"${tunerStyle}>
+    ${_sliderRow("base", "Log base", 1.1, 10, 0.1, knobs.base, "Higher = flatter magnitude curve (2 = doubling, 3 = tripling…).")}
+    ${_sliderRow("halfLifeHours", "Freshness half-life (h)", 1, 96, 1, knobs.halfLifeHours, "Score halves every N hours of quiet. Lower = more recency-driven.")}
+    ${_sliderRow("importanceFloor", "Importance floor", 0, 1, 0.05, knobs.importanceFloor, "0 = importance can zero a story; 0.5 = 50% baseline floor.")}
+    ${_sliderRow("magnitudeCap", "Magnitude cap", 1, 20, 0.5, knobs.magnitudeCap, "Caps log-based magnitude. Lower = no mega-event dominance.")}
+    <div class="menu-knob-preview" data-knob-preview>—</div>
+    <button class="mobile-menu-item" data-action="knob-reset">
+      <span class="item-icon">↺</span>
+      <span class="item-text">Reset to defaults</span>
+    </button>
+  </div>`;
+  return `
+    <div class="menu-section">
+      <div class="menu-section-header">
+        <span class="menu-section-title">Sort</span>
+      </div>
+      <div class="menu-section-body">
+        <div class="menu-appearance-row">
+          <span class="menu-appearance-label">Mode</span>
+          <div class="menu-appearance-options">${normalPill}${shapedPill}</div>
+        </div>
+        <div class="menu-sort-help">
+          ${isShaped
+            ? "Score = log<sub>B</sub>(1+count) × freshness × importance, capped and floored."
+            : "Current: most articles first; timestamp breaks ties."}
+        </div>
+        ${tuner}
+      </div>
+    </div>
+  `;
+}
+
+function _updateKnobPreview() {
+  const preview = document.querySelector("[data-knob-preview]");
+  if (!preview) return;
+  const ev = (getEvents() || [])[0];
+  if (!ev) { preview.textContent = "No events to preview."; return; }
+  const k = getScoreKnobs();
+  const score = computeEventScore(ev, k);
+  if (!Number.isFinite(score)) {
+    preview.textContent = "—";
+    return;
+  }
+  const ageH = ev.last_article_at
+    ? Math.max(0, (Date.now() - new Date(ev.last_article_at).getTime()) / 3600000)
+    : null;
+  const ageStr = ageH == null ? "no last-article time" : `${ageH.toFixed(1)}h old`;
+  preview.textContent = `Top event: ${ev.name} (${ev.article_count} articles, ${ageStr}) → ${score.toFixed(2)}`;
 }
 
 function openMenu() {
@@ -277,9 +353,62 @@ function wireActions(root) {
         }
       } else if (action === "install") {
         installPwa();
+      } else if (action === "sort-mode") {
+        const mode = btn.dataset.sortMode;
+        if (mode === "score" || mode === "normal") {
+          setSortMode(mode);
+          rerender();
+          if (mode === "score") {
+            try { await rescoreAndRefetch(); } catch (_) { rescoreLocal(); }
+          } else {
+            await rescoreAndRefetch();
+          }
+        }
+      } else if (action === "knob-reset") {
+        resetScoreKnobs();
+        rerender();
+        rescoreLocal();
       }
     });
   });
+
+  root.querySelectorAll("input[data-action='knob']").forEach(input => {
+    input.addEventListener("input", () => {
+      const id = input.dataset.knob;
+      const n = Number(input.value);
+      if (!Number.isFinite(n)) return;
+      const patch = {};
+      patch[id] = n;
+      setScoreKnobs(patch);
+      const out = root.querySelector(`[data-knob-value-for="${id}"]`);
+      if (out) {
+        const step = Number(input.step) || 1;
+        out.textContent = (step < 1 ? n.toFixed(2) : String(Math.round(n)));
+      }
+      rescoreLocal();
+      _updateKnobPreview();
+    });
+  });
+}
+
+function rescoreLocal() {
+  if (getSortMode() !== "score") return;
+  const current = getEvents() || [];
+  const sorted = sortEventsByScore(current, getScoreKnobs());
+  setEvents(sorted);
+  renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
+  window.dispatchEvent(new CustomEvent("events-rescored"));
+}
+
+async function rescoreAndRefetch() {
+  closeMenu();
+  try {
+    const data = await listEvents();
+    setEvents(data);
+  } catch (e) {
+    console.error("rescoreAndRefetch failed", e);
+  }
+  window.dispatchEvent(new CustomEvent("article-moved"));
 }
 
 function rerender() {
@@ -293,13 +422,17 @@ export function setupMobileMenu(onAfterRefresh) {
   const btn = document.getElementById("btn-menu");
   const close = document.getElementById("btn-menu-close");
   const backdrop = document.getElementById("mobile-menu-backdrop");
-  if (btn) btn.addEventListener("click", async () => {
+  if (btn)   btn.addEventListener("click", async () => {
     if (isOpen) {
       closeMenu();
       return;
     }
+    if (getMinorDrawerOpen()) {
+      setMinorDrawerOpen(false);
+    }
     await Promise.all([refreshCachedStats(), refreshCachedFeeds()]);
     openMenu();
+    if (getSortMode() === "score") _updateKnobPreview();
   });
   if (close) close.addEventListener("click", () => closeMenu());
   if (backdrop) backdrop.addEventListener("click", () => closeMenu());
@@ -310,6 +443,7 @@ export function setupMobileMenu(onAfterRefresh) {
     if (!isOpen) return;
     if (isMobileWidth()) renderSheetBody();
     else renderPanelBody();
+    if (getSortMode() === "score") _updateKnobPreview();
   });
   window.addEventListener("theme-changed", () => {
     if (!isOpen) return;

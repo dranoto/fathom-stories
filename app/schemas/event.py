@@ -48,6 +48,7 @@ class EventResponse(BaseModel):
     feed_count: Optional[int] = 0
     importance_avg: Optional[float] = 0.0
     new_since_visit: Optional[int] = 0
+    score: Optional[float] = None
 
 
 class ArticleInEvent(BaseModel):

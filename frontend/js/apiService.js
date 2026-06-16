@@ -15,10 +15,22 @@ async function handleFetch(url, options = {}) {
   return res.json();
 }
 
-export async function listEvents({ status, minArticles } = {}) {
+export async function listEvents({ status, minArticles, sort, knobs } = {}) {
+  const { getSortMode, getScoreKnobs } = await import("./state.js");
   const params = new URLSearchParams();
   if (status) params.set("status", status);
   if (minArticles !== undefined) params.set("min_articles", String(minArticles));
+  const sortMode = sort || getSortMode();
+  params.set("sort", sortMode);
+  if (sortMode === "score") {
+    const k = knobs || getScoreKnobs();
+    if (k) {
+      if (Number.isFinite(k.base)) params.set("score_base", String(k.base));
+      if (Number.isFinite(k.halfLifeHours)) params.set("score_half_life", String(k.halfLifeHours));
+      if (Number.isFinite(k.importanceFloor)) params.set("score_floor", String(k.importanceFloor));
+      if (Number.isFinite(k.magnitudeCap)) params.set("score_cap", String(k.magnitudeCap));
+    }
+  }
   const qs = params.toString();
   return handleFetch(`/api/events${qs ? "?" + qs : ""}`);
 }

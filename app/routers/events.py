@@ -52,6 +52,11 @@ async def _regen_summary_after_remove(event_id: int, llm) -> None:
 async def list_events(
     status: Optional[str] = Query(None, description="Filter by status: active|cooling|archived"),
     min_articles: int = Query(1, ge=1, description="Only include events with at least this many articles"),
+    sort: str = Query("normal", pattern="^(normal|score)$", description="Sort mode: 'normal' (count+timestamp) or 'score' (shaped magnitude × freshness × importance)"),
+    score_base: Optional[float] = Query(None, ge=1.1, le=10.0, description="Override SCORE_LOG_BASE"),
+    score_half_life: Optional[float] = Query(None, ge=1.0, le=96.0, description="Override SCORE_FRESHNESS_HALF_LIFE_HOURS"),
+    score_floor: Optional[float] = Query(None, ge=0.0, le=1.0, description="Override SCORE_IMPORTANCE_FLOOR"),
+    score_cap: Optional[float] = Query(None, ge=1.0, le=20.0, description="Override SCORE_MAGNITUDE_CAP"),
     visitor_id: str = Depends(get_visitor_id),
     db: SQLAlchemySession = Depends(database.get_db),
 ):
@@ -96,6 +101,11 @@ async def list_events(
         .group_by(Article.event_id)
         .all()
     )
+
+    base = score_base if score_base is not None else app_config.SCORE_LOG_BASE
+    half_life = score_half_life if score_half_life is not None else app_config.SCORE_FRESHNESS_HALF_LIFE_HOURS
+    floor_w = score_floor if score_floor is not None else app_config.SCORE_IMPORTANCE_FLOOR
+    cap = score_cap if score_cap is not None else app_config.SCORE_MAGNITUDE_CAP
     read_article_ids_subq = (
         db.query(ArticleRead.article_id)
         .filter(ArticleRead.visitor_id == visitor_id)
@@ -113,6 +123,7 @@ async def list_events(
 
     from ..database.models import EventVisit
     from datetime import datetime, timezone
+    now_ts = datetime.now(timezone.utc)
     visit_rows = (
         db.query(EventVisit.event_id, EventVisit.last_visited_at)
         .filter(EventVisit.visitor_id == visitor_id, EventVisit.event_id.in_(event_ids))
@@ -139,8 +150,27 @@ async def list_events(
             )
             new_since_visit[ev.id] = int(n)
 
-    result = [
-        EventResponse(
+    result = []
+    for ev in events:
+        article_count = article_counts.get(ev.id, 0)
+        importance_avg = float(importance_avgs.get(ev.id) or 0.0)
+        score_value = None
+        if sort == "score":
+            import math
+            magnitude = math.log(1 + max(0, article_count)) / math.log(base)
+            if cap is not None:
+                magnitude = min(magnitude, cap)
+            last_at = ev.last_article_at
+            if last_at is not None and last_at.tzinfo is None:
+                last_at = last_at.replace(tzinfo=timezone.utc)
+            if last_at is not None and half_life > 0:
+                age_hours = max(0.0, (now_ts - last_at).total_seconds() / 3600.0)
+                freshness = 0.5 ** (age_hours / half_life)
+            else:
+                freshness = 0.5
+            importance_floor = floor_w + (1.0 - floor_w) * max(0.0, min(1.0, importance_avg))
+            score_value = magnitude * freshness * importance_floor
+        result.append(EventResponse(
             id=ev.id,
             name=ev.name,
             description=ev.description,
@@ -150,22 +180,31 @@ async def list_events(
             archived_at=ev.archived_at,
             expires_at=ev.expires_at,
             summary_version=ev.summary_version or 0,
-            article_count=article_counts.get(ev.id, 0),
+            article_count=article_count,
             unread_count=unread_counts.get(ev.id, 0),
-            read_count=max(0, article_counts.get(ev.id, 0) - unread_counts.get(ev.id, 0)),
+            read_count=max(0, article_count - unread_counts.get(ev.id, 0)),
             feed_count=feed_counts.get(ev.id, 0),
-            importance_avg=float(importance_avgs.get(ev.id) or 0.0),
+            importance_avg=importance_avg,
             new_since_visit=new_since_visit.get(ev.id, 0),
+            score=score_value,
+        ))
+
+    if sort == "score":
+        result.sort(
+            key=lambda r: (
+                -(r.score if r.score is not None else float("-inf")),
+                -(r.article_count or 0),
+                -(r.last_article_at.timestamp() if r.last_article_at else 0),
+            )
         )
-        for ev in events
-    ]
-    result.sort(
-        key=lambda r: (
-            -(r.article_count or 0),
-            -(r.last_article_at.timestamp() if r.last_article_at else 0),
-            -(r.created_at.timestamp() if r.created_at else 0),
+    else:
+        result.sort(
+            key=lambda r: (
+                -(r.article_count or 0),
+                -(r.last_article_at.timestamp() if r.last_article_at else 0),
+                -(r.created_at.timestamp() if r.created_at else 0),
+            )
         )
-    )
     return result
 
 

@@ -13,6 +13,65 @@ let currentArticleId = null;
 let regeneratingEventIds = new Set();
 let regeneratingTimers = new Map();
 
+const SORT_MODE_KEY = "fathom.sortMode";
+const SCORE_KNOBS_KEY = "fathom.scoreKnobs";
+
+const DEFAULT_SORT_MODE = "normal";
+const DEFAULT_SCORE_KNOBS = {
+  base: 2.0,
+  halfLifeHours: 8.0,
+  importanceFloor: 0.5,
+  magnitudeCap: 6.0,
+};
+
+function _readSortMode() {
+  try {
+    const v = localStorage.getItem(SORT_MODE_KEY);
+    return v === "score" || v === "normal" ? v : DEFAULT_SORT_MODE;
+  } catch (_) { return DEFAULT_SORT_MODE; }
+}
+function _readScoreKnobs() {
+  try {
+    const raw = localStorage.getItem(SCORE_KNOBS_KEY);
+    if (!raw) return { ...DEFAULT_SCORE_KNOBS };
+    const parsed = JSON.parse(raw);
+    const out = { ...DEFAULT_SCORE_KNOBS };
+    for (const k of Object.keys(DEFAULT_SCORE_KNOBS)) {
+      const n = Number(parsed[k]);
+      if (Number.isFinite(n)) out[k] = n;
+    }
+    return out;
+  } catch (_) { return { ...DEFAULT_SCORE_KNOBS }; }
+}
+
+let sortMode = _readSortMode();
+let scoreKnobs = _readScoreKnobs();
+
+export function getSortMode() { return sortMode; }
+export function setSortMode(mode) {
+  if (mode !== "score" && mode !== "normal") return;
+  if (sortMode === mode) return;
+  sortMode = mode;
+  try { localStorage.setItem(SORT_MODE_KEY, mode); } catch (_) {}
+  window.dispatchEvent(new CustomEvent("sort-mode-changed", { detail: { mode } }));
+}
+export function getScoreKnobs() { return { ...scoreKnobs }; }
+export function setScoreKnobs(next) {
+  const merged = { ...scoreKnobs, ...next };
+  for (const k of Object.keys(DEFAULT_SCORE_KNOBS)) {
+    const n = Number(merged[k]);
+    if (Number.isFinite(n)) merged[k] = n;
+    else merged[k] = DEFAULT_SCORE_KNOBS[k];
+  }
+  scoreKnobs = merged;
+  try { localStorage.setItem(SCORE_KNOBS_KEY, JSON.stringify(scoreKnobs)); } catch (_) {}
+  window.dispatchEvent(new CustomEvent("score-knobs-changed", { detail: { knobs: { ...scoreKnobs } } }));
+}
+export function resetScoreKnobs() {
+  setScoreKnobs({ ...DEFAULT_SCORE_KNOBS });
+}
+export const SCORE_DEFAULTS = { ...DEFAULT_SCORE_KNOBS };
+
 export function getEvents() { return events; }
 export function setEvents(v) { events = v; }
 export function getActiveEventId() { return activeEventId; }
@@ -105,4 +164,32 @@ export function dispatchReadStateChanged(articleId, eventId, isRead) {
 
 export function dispatchReaderClosed() {
   window.dispatchEvent(new CustomEvent("reader-closed"));
+}
+
+const SEEN_EVENTS_KEY = "fathom.seenEventIds";
+function _readSeenEventIds() {
+  try {
+    const raw = localStorage.getItem(SEEN_EVENTS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.filter(n => Number.isFinite(n)) : []);
+  } catch (_) { return new Set(); }
+}
+function _writeSeenEventIds(set) {
+  try { localStorage.setItem(SEEN_EVENTS_KEY, JSON.stringify([...set])); } catch (_) {}
+}
+
+export function getSeenEventIds() { return _readSeenEventIds(); }
+export function markEventSeen(eventId) {
+  const id = Number(eventId);
+  if (!Number.isFinite(id)) return;
+  const set = _readSeenEventIds();
+  if (set.has(id)) return;
+  set.add(id);
+  _writeSeenEventIds(set);
+  window.dispatchEvent(new CustomEvent("event-seen-changed", { detail: { eventId: id } }));
+}
+export function resetSeenEventIds() {
+  try { localStorage.removeItem(SEEN_EVENTS_KEY); } catch (_) {}
+  window.dispatchEvent(new CustomEvent("event-seen-changed", { detail: { reset: true } }));
 }
