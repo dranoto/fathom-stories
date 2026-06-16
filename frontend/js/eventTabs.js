@@ -63,7 +63,7 @@ export function partitionEvents(events, viewportWidth) {
   return { topN, mostRecent, minor };
 }
 
-function _cardMarkup(e, activeId, inboxOpen) {
+function _cardMarkup(e, activeId, inboxOpen, group) {
   const cls = [
     "event-tab",
     e.id === activeId && !inboxOpen ? "active" : "",
@@ -84,7 +84,8 @@ function _cardMarkup(e, activeId, inboxOpen) {
   const statusIcon = e.status === "cooling"
     ? `<span class="status-icon">❄</span>`
     : "";
-  return `<div class="${cls}" data-event-id="${e.id}" title="${escapeHtml(e.name)}">
+  const groupAttr = group ? ` data-group="${group}"` : "";
+  return `<div class="${cls}" data-event-id="${e.id}"${groupAttr} title="${escapeHtml(e.name)}">
     ${unreadDot}${newBadge}
     <div class="name two-line">${statusIcon}${escapeHtml(e.name)}</div>
     ${metaLine ? `<div class="meta">${metaLine}</div>` : ""}
@@ -125,7 +126,7 @@ function _mostRecentMarkup(e, activeId, inboxOpen) {
   const newBadge = newCount > 0
     ? `<span class="new-badge" title="${newCount} new since last visit">+${newCount > 99 ? "99+" : newCount}</span>`
     : "";
-  return `<div class="${cls}" data-event-id="${e.id}" title="${escapeHtml(e.name)}">
+  return `<div class="${cls}" data-event-id="${e.id}" data-group="most-recent" title="${escapeHtml(e.name)}">
     <span class="new-tag" title="Newest event by creation date">New</span>
     ${unreadDot}${newBadge}
     <div class="name two-line">${escapeHtml(e.name)}</div>
@@ -135,14 +136,15 @@ function _mostRecentMarkup(e, activeId, inboxOpen) {
 
 function _minorToggleMarkup(minor, drawerOpen) {
   const chev = drawerOpen ? "▴" : "▾";
-  return `<div class="event-tab minor-toggle" data-minor-toggle="1" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${minor.length} more event${minor.length === 1 ? "" : "s"}">
+  return `<div class="event-tab minor-toggle" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${minor.length} more event${minor.length === 1 ? "" : "s"}">
     <div class="name two-line"><span>${minor.length} Minor Event${minor.length === 1 ? "" : "s"}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">click to ${drawerOpen ? "hide" : "show"}</div>
+    ${_drawerMarkup(minor, drawerOpen)}
   </div>`;
 }
 
 function _drawerMarkup(minor, drawerOpen) {
-  const cards = minor.map((e) => _cardMarkup(e, getActiveEventId(), false)).join("");
+  const cards = minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
   return `<div class="minor-drawer" data-open="${drawerOpen ? "1" : "0"}" aria-hidden="${drawerOpen ? "false" : "true"}">${cards}</div>`;
 }
 
@@ -168,8 +170,9 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
   const parts = [];
   parts.push('<div class="event-bar-row">');
   parts.push(_inboxMarkup(activeId, inboxOpen, inboxN, inboxU));
-  for (const e of topN) {
-    parts.push(_cardMarkup(e, activeId, inboxOpen));
+  for (let i = 0; i < topN.length; i++) {
+    const group = i === 0 ? "top-start" : "top";
+    parts.push(_cardMarkup(topN[i], activeId, inboxOpen, group));
   }
   if (mostRecent) {
     parts.push(_mostRecentMarkup(mostRecent, activeId, inboxOpen));
@@ -178,9 +181,6 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     parts.push(_minorToggleMarkup(minor, drawerOpen));
   }
   parts.push("</div>");
-  if (minor.length > 0) {
-    parts.push(_drawerMarkup(minor, drawerOpen));
-  }
 
   container.innerHTML = parts.join("");
 
@@ -195,7 +195,8 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     el.addEventListener("click", () => onSelectInbox());
   });
   container.querySelectorAll(".event-tab[data-minor-toggle]").forEach((el) => {
-    el.addEventListener("click", () => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".minor-drawer")) return;
       if (typeof onToggleMinor === "function") {
         onToggleMinor();
       } else {
@@ -224,6 +225,7 @@ export function setupEventTabs() {
   barRow.addEventListener(
     "wheel",
     (e) => {
+      if (e.target && e.target.closest && e.target.closest(".minor-drawer")) return;
       if (e.deltaY === 0 && e.deltaX === 0) return;
       e.preventDefault();
       barRow.scrollLeft += e.deltaY + e.deltaX;

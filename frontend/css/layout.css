@@ -125,6 +125,7 @@ body {
   gap: 0;
   overflow: visible;
   min-height: 64px;
+  position: relative;
 }
 .event-tabs .event-bar-row {
   display: flex;
@@ -136,6 +137,11 @@ body {
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 .event-tabs .event-bar-row::-webkit-scrollbar { height: 6px; }
+.event-tab[data-group="top-start"],
+.event-tab[data-group="most-recent"],
+.event-tab[data-group="drawer"] {
+  margin-left: auto;
+}
 .tabs-empty {
   color: var(--text-dim);
   font-size: 13px;
@@ -266,6 +272,7 @@ body {
 }
 
 .event-tab.minor-toggle {
+  position: relative;
   background: var(--bg);
   border-style: dashed;
   border-color: var(--border);
@@ -299,20 +306,36 @@ body {
 }
 
 .minor-drawer {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 192px;
   max-height: 0;
   overflow: hidden;
-  transition: max-height 200ms ease-out;
+  transition: max-height 200ms ease-out, opacity 200ms ease-out;
+  opacity: 0;
+  z-index: 200;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 0;
-  margin-top: 0;
+  gap: 6px;
+  padding: 6px;
+  pointer-events: none;
 }
 .minor-drawer[data-open="1"] {
   max-height: 60vh;
   overflow-y: auto;
-  padding-top: 10px;
-  margin-top: 2px;
+  opacity: 1;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+.minor-drawer .event-tab {
+  width: 180px;
+  flex: 0 0 180px;
 }
 
 @media (max-width: 640px) {
