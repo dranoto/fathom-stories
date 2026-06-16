@@ -38,6 +38,7 @@ export function setupReader() {
 
   window.addEventListener("open-summary", async (e) => {
     const id = e.detail.eventId;
+    console.log("open-summary listener: received for", id);
     await openSummary(id);
   });
 
@@ -337,6 +338,7 @@ export function closeReader() {
 }
 
 async function openSummary(eventId) {
+  console.log("openSummary: starting for", eventId);
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
   const body = document.getElementById("reader-body");
@@ -416,6 +418,7 @@ async function openSummary(eventId) {
       ${renderCrossSourceSynthesis(summary.cross_source_synthesis)}
     </div>
   `;
+  console.log("openSummary: rendered for", eventId, "name:", event.name);
   toggle.textContent = "Regenerate";
   toggle.style.display = "";
   orig.style.display = "none";

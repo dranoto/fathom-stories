@@ -44,6 +44,7 @@ async function refreshEvents() {
 
 async function onTabSelect(eventId) {
   await selectEventTab(eventId);
+  console.log("onTabSelect: dispatching open-summary for", eventId, "isDesktop:", isDesktopLayout());
   if (isDesktopLayout()) {
     window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
   }
