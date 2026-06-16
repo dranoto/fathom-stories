@@ -202,6 +202,10 @@ def _parse_mcp_servers(raw: str) -> list:
 CHAT_MCP_SERVERS_RAW = os.getenv("CHAT_MCP_SERVERS", "")
 CHAT_MCP_SERVERS = _parse_mcp_servers(CHAT_MCP_SERVERS_RAW)
 
+# --- Grouping Rules ---
+REQUIRE_DISTINCT_SOURCES: bool = os.getenv("REQUIRE_DISTINCT_SOURCES", "true").lower() in ("1", "true", "yes")
+
+
 # --- Debug Configuration ---
 DEBUG_LEVEL = os.getenv("DEBUG_LEVEL", "standard").lower()
 DEBUG_LEVELS = {"minimal": 0, "standard": 1, "verbose": 2, "trace": 3}

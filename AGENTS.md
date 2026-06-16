@@ -103,6 +103,7 @@ python -m app.cli serve    # run in foreground
 | `python -m app.cli group` | One-shot live grouping (existing events only, no new events) |
 | `python -m app.cli regroup` | One-shot forced regroup (creates new events when 2+ ungrouped match) |
 | `python -m app.cli recluster [--apply]` | One-shot daily recluster; `--apply` auto-applies cool/revive |
+| `python -m app.cli disband-same-source [--apply]` | One-shot: disband events with ≤2 articles from a single `publisher_name` (1- and 2-article same-source events); pushes their articles back to the inbox as `proposed_event_name` singletons. Dry-run by default. |
 | `python -m app.cli lifecycle` | One-shot archive/cool tick |
 | `python -m app.cli summarize <event_id>` | Generate/regenerate event summary |
 | `python -m app.cli stats` | Show counts |
@@ -186,6 +187,13 @@ scraper_assistant/        # bypass-paywalls extension (gitignored)
 - Sends full context to LLM, gets back per-article decision: existing | new | uncategorized
 - 2+ articles sharing a new name create a fresh Event
 - **Followed by an LLM dedup pass** over all active events to merge semantic duplicates (confidence threshold 0.7)
+
+**Distinct-source rule** (toggle: `REQUIRE_DISTINCT_SOURCES`, default `true`):
+- A new Event is only created when the proposing articles include at least 2 distinct `publisher_name` values.
+- Live assigner: 1-article `new` decisions become `proposed_event_name` singletons (no Event row).
+- Regrouper: 1-article clusters become singletons (unchanged). 2+ article clusters whose articles share one `publisher_name` also become singletons.
+- Singleton articles stay in the inbox with `proposed_event_name` set; the next regroup pass can re-merge them with a real cross-source companion.
+- Existing same-source 1- and 2-article events can be cleaned up retroactively with `python -m app.cli disband-same-source [--apply]`. 3+ article events are never touched, even if all from one source.
 
 **Daily reclusterer** runs at 03:00 UTC:
 - Pulls last-14-days articles + active/archived (last 30d) events

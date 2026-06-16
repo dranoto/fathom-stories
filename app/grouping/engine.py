@@ -26,6 +26,13 @@ def _normalize_event_name(name: str) -> str:
     return " ".join(name.strip().lower().split())
 
 
+def _articles_have_distinct_sources(articles: List[Article]) -> bool:
+    if not app_config.REQUIRE_DISTINCT_SOURCES:
+        return True
+    sources = {a.publisher_name for a in articles}
+    return len(sources) >= 2
+
+
 def find_or_create_event(
     db,
     name: str,
@@ -166,6 +173,7 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
         "existing": 0,
         "new": 0,
         "reused": 0,
+        "singleton": 0,
         "uncategorized": 0,
         "errors": 0,
     }
@@ -207,6 +215,14 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                         counts["errors"] += 1
                         continue
                     importance = float(a.get("importance_score") or 0.5)
+                    confidence = float(a.get("confidence") or 0.0)
+                    if not _articles_have_distinct_sources([article]):
+                        article.proposed_event_name = name
+                        article.importance_score = importance
+                        article.grouping_confidence = confidence
+                        article.grouped_at = now
+                        counts["singleton"] += 1
+                        continue
                     new_event, outcome = find_or_create_event(
                         db,
                         name,
@@ -216,7 +232,7 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                     article.event_id = new_event.id
                     article.proposed_event_name = None
                     article.importance_score = importance
-                    article.grouping_confidence = float(a.get("confidence") or 0.0)
+                    article.grouping_confidence = confidence
                     article.grouped_at = now
                     if outcome == "created":
                         counts["new"] += 1
@@ -427,6 +443,21 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                     counts["errors"] += 1
                     continue
                 first_importance = float(first.get("importance_score") or 0.5)
+                cluster_rows: List[Article] = []
+                for item in items:
+                    art = db.query(Article).filter(Article.id == item.get("article_id")).first()
+                    if art:
+                        cluster_rows.append(art)
+                if not _articles_have_distinct_sources(cluster_rows):
+                    for item in items:
+                        art = db.query(Article).filter(Article.id == item.get("article_id")).first()
+                        if art:
+                            art.proposed_event_name = name
+                            art.importance_score = float(item.get("importance_score") or 0.5)
+                            art.grouping_confidence = float(item.get("confidence") or 0.0)
+                            art.grouped_at = now
+                    counts["new_singletons"] += 1
+                    continue
                 new_event, outcome = find_or_create_event(
                     db,
                     name,

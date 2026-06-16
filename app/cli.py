@@ -197,6 +197,72 @@ def cmd_recluster(args):
     print(f"Recluster result: {result}")
 
 
+def cmd_disband_same_source(args):
+    from sqlalchemy import func
+    from .database.models import Event, Article, EventSummary
+
+    create_db_and_tables()
+    now = datetime.now(timezone.utc)
+
+    with db_session_scope() as db:
+        candidates = (
+            db.query(Event)
+            .join(Article, Article.event_id == Event.id)
+            .group_by(Event.id)
+            .having(func.count(Article.id) <= 2)
+            .having(
+                func.count(func.distinct(func.coalesce(Article.publisher_name, ""))) <= 1
+            )
+            .order_by(Event.id)
+            .all()
+        )
+
+    if not candidates:
+        print("No candidates found (events with <=2 articles from a single source).")
+        return
+
+    print(f"Found {len(candidates)} candidate event(s):")
+    for ev in candidates:
+        with db_session_scope() as db:
+            arts = db.query(Article).filter(Article.event_id == ev.id).all()
+        pubs = sorted({a.publisher_name for a in arts})
+        titles = [a.title for a in arts if a.title]
+        print(
+            f"  event {ev.id} status={ev.status} name={ev.name!r} "
+            f"articles={len(arts)} publishers={pubs} last_article_at={ev.last_article_at}"
+        )
+        for t in titles:
+            print(f"      - {t}")
+
+    if not args.apply:
+        print("\nDry-run only. Re-run with --apply to commit.")
+        return
+
+    disbanded = 0
+    displaced = 0
+    with db_session_scope() as db:
+        ev_ids = [ev.id for ev in candidates]
+        target_events = db.query(Event).filter(Event.id.in_(ev_ids)).all()
+        for ev in target_events:
+            arts = db.query(Article).filter(Article.event_id == ev.id).all()
+            for a in arts:
+                a.event_id = None
+                a.proposed_event_name = ev.name
+                a.grouped_at = now
+                displaced += 1
+            db.query(EventSummary).filter(
+                EventSummary.event_id == ev.id
+            ).delete(synchronize_session=False)
+            db.query(Event).filter(Event.id == ev.id).delete(synchronize_session=False)
+            logger.info(
+                f"DISBAND: event {ev.id} {ev.name!r} "
+                f"({len(arts)} article(s), status={ev.status}) — articles back to inbox"
+            )
+            disbanded += 1
+
+    print(f"\nDisbanded {disbanded} event(s); {displaced} article(s) back to inbox (proposed_event_name set).")
+
+
 def cmd_lifecycle(_args):
     create_db_and_tables()
     print(f"Lifecycle result: {lifecycle_module.tick()}")
@@ -481,6 +547,13 @@ def main():
     p_recluster = sub.add_parser("recluster", help="One-shot daily recluster")
     p_recluster.add_argument("--apply", action="store_true", help="Auto-apply cooling/revive proposals")
     p_recluster.set_defaults(func=cmd_recluster)
+
+    p_disband = sub.add_parser(
+        "disband-same-source",
+        help="One-shot: disband events with <=2 articles from a single publisher_name. Dry-run by default.",
+    )
+    p_disband.add_argument("--apply", action="store_true", help="Commit the disband (default: dry-run)")
+    p_disband.set_defaults(func=cmd_disband_same_source)
     sub.add_parser("lifecycle", help="One-shot archive/cool tick").set_defaults(func=cmd_lifecycle)
     p_summarize = sub.add_parser("summarize", help="Generate summary for an event")
     p_summarize.add_argument("event_id", type=int)
