@@ -17,6 +17,7 @@ import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
 import { registerServiceWorker } from "./js/pwa.js";
 import { setupSwipeNav } from "./js/swipeNav.js";
 import { selectEventTab, selectInboxTab } from "./js/tabActions.js";
+import { isDesktopLayout } from "./js/layout.js";
 
 async function refreshEvents() {
   let all = [];
@@ -43,7 +44,9 @@ async function refreshEvents() {
 
 async function onTabSelect(eventId) {
   await selectEventTab(eventId);
-  window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
+  if (isDesktopLayout()) {
+    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId } }));
+  }
 }
 
 async function onInboxSelect() {
@@ -188,7 +191,7 @@ async function bootstrap() {
   await refreshInboxCounts();
   await refreshEvents();
   const initialActiveId = getActiveEventId();
-  if (!getInboxOpen() && initialActiveId != null) {
+  if (!getInboxOpen() && initialActiveId != null && isDesktopLayout()) {
     window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: initialActiveId } }));
   }
   await refreshStats();

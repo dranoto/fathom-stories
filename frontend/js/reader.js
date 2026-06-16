@@ -15,6 +15,7 @@ import {
   getActiveEventDetail,
   markEventRegenerating,
 } from "./state.js";
+import { isDesktopLayout } from "./layout.js";
 
 let currentArticle = null;
 let currentSummary = null;
@@ -243,7 +244,9 @@ async function renderEventPicker(article) {
           window.dispatchEvent(new CustomEvent("article-moved", { detail: { articleId: article.id, eventId: evId } }));
           btn.textContent = "Done ✓";
           window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: evId } }));
-          window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: article.id } }));
+          if (isDesktopLayout()) {
+            window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: article.id } }));
+          }
         }
       } catch (e) {
         status.textContent = "Error: " + e.message;
@@ -294,7 +297,9 @@ function setupRemoveButton(article) {
         },
       }));
       window.dispatchEvent(new CustomEvent("navigate-to-event", { detail: { eventId: targetEventId } }));
-      window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: targetEventId } }));
+      if (isDesktopLayout()) {
+        window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: targetEventId } }));
+      }
     } catch (e) {
       alert("Failed: " + e.message);
       btn.disabled = false;
