@@ -8,6 +8,7 @@ import {
   getMinorDrawerOpen,
   setMinorDrawerOpen,
 } from "./state.js";
+import { isDesktopLayout } from "./layout.js";
 
 const INBOX_ID = "__inbox__";
 
