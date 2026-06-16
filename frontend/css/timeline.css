@@ -26,6 +26,10 @@
 }
 .expiry-row {
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .expiry-chip {
   display: inline-flex;
@@ -59,6 +63,28 @@
 }
 .expiry-chip.expired .expiry-time {
   color: var(--danger, #d9534f);
+}
+.mark-all-read-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.mark-all-read-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.mark-all-read-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .summary-card {

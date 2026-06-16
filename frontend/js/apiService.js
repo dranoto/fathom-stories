@@ -118,6 +118,10 @@ export async function markEventVisited(eventId) {
   return handleFetch(`/api/events/${eventId}/visit`, { method: "POST" });
 }
 
+export async function markAllEventArticlesRead(eventId) {
+  return handleFetch(`/api/events/${eventId}/mark-all-read`, { method: "POST" });
+}
+
 export async function fetchEventChatHistory(eventId) {
   return handleFetch(`/api/events/${eventId}/chat-history`);
 }

@@ -654,6 +654,51 @@ async def revive_event_endpoint(
     return {"message": "Event revived", "event_id": event_id}
 
 
+@router.post("/{event_id}/mark-all-read")
+async def mark_all_read_in_event(
+    event_id: int,
+    visitor_id: str = Depends(get_visitor_id),
+    db: SQLAlchemySession = Depends(database.get_db),
+):
+    verify_event_exists(db, event_id)
+    article_ids = [
+        r[0]
+        for r in db.query(Article.id)
+        .filter(Article.event_id == event_id)
+        .all()
+    ]
+    if not article_ids:
+        return {"message": "no articles", "marked": 0, "article_ids": [], "event_id": event_id}
+    already = {
+        r[0]
+        for r in db.query(ArticleRead.article_id)
+        .filter(
+            ArticleRead.visitor_id == visitor_id,
+            ArticleRead.article_id.in_(article_ids),
+        )
+        .all()
+    }
+    to_add = [aid for aid in article_ids if aid not in already]
+    if to_add:
+        now = datetime.now(timezone.utc)
+        db.bulk_save_objects([
+            ArticleRead(article_id=aid, visitor_id=visitor_id, read_at=now)
+            for aid in to_add
+        ])
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error bulk-marking articles read in event {event_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to mark articles read")
+    return {
+        "message": "marked read",
+        "marked": len(to_add),
+        "article_ids": to_add,
+        "event_id": event_id,
+    }
+
+
 @router.get("/_stats/all", response_model=StatsOut)
 async def stats(
     db: SQLAlchemySession = Depends(database.get_db),

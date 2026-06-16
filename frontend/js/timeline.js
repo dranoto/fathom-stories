@@ -1,6 +1,6 @@
 // frontend/js/timeline.js
-import { getActiveEventDetail, getActiveEventId, getCurrentArticleId, isEventRegenerating, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts } from "./state.js";
-import { getEvent, listUngroupedArticles, runRegroup } from "./apiService.js";
+import { getActiveEventDetail, getActiveEventId, getCurrentArticleId, isEventRegenerating, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts, markRead as stateMarkRead, patchEventUnreadCount, dispatchReadStateChanged } from "./state.js";
+import { getEvent, listUngroupedArticles, runRegroup, markAllEventArticlesRead } from "./apiService.js";
 import { renderEventTabs, escapeHtml as tabsEscape } from "./eventTabs.js";
 
 window.addEventListener("current-article-changed", (e) => {
@@ -48,14 +48,15 @@ export async function renderActiveEventPane(eventId) {
   const html = `
     <div class="event-header">
       <h1>${escapeHtml(ev.name)}</h1>
-      ${expiresAt ? `
-        <div class="expiry-row">
+      <div class="expiry-row">
+        ${expiresAt ? `
           <span class="expiry-chip" data-expires-at="${expiresAt.toISOString()}" title="Event auto-archives at ${escapeHtml(expiresAt.toLocaleString())}">
             <span class="expiry-label">expires in</span>
             <span class="expiry-time">--</span>
           </span>
-        </div>
-      ` : ""}
+        ` : ""}
+        <button class="mark-all-read-btn" data-action="mark-all-read" data-event-id="${eventId}" title="Mark every article in this event as read">Mark all as read</button>
+      </div>
       <div class="meta">
         <span>${ev.article_count || articles.length} articles</span>
         ${ev.last_article_at ? `<span>last: ${formatRelative(new Date(ev.last_article_at))}</span>` : ""}
@@ -70,6 +71,7 @@ export async function renderActiveEventPane(eventId) {
   pane.innerHTML = html;
   attachBubbleHandlers(pane, eventId);
   attachSummaryBubbleHandler(pane, eventId);
+  attachMarkAllReadHandler(pane, eventId);
   if (expiresAt) startExpiryCountdown(pane, expiresAt);
 }
 
@@ -137,6 +139,38 @@ function attachSummaryBubbleHandler(pane, eventId) {
       window.dispatchEvent(new CustomEvent("open-chat", { detail: { eventId } }));
     });
   }
+}
+
+function attachMarkAllReadHandler(pane, eventId) {
+  const btn = pane.querySelector(".mark-all-read-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = "Marking…";
+    try {
+      const res = await markAllEventArticlesRead(eventId);
+      const ids = (res && Array.isArray(res.article_ids)) ? res.article_ids : [];
+      const detail = getActiveEventDetail();
+      for (const id of ids) {
+        stateMarkRead(id);
+        if (detail && Array.isArray(detail.articles)) {
+          for (const a of detail.articles) {
+            if (a.id === id) { a.is_read = true; break; }
+          }
+        }
+        patchEventUnreadCount(id, eventId, true);
+        dispatchReadStateChanged(id, eventId, true);
+      }
+      await renderActiveEventPane(eventId);
+    } catch (err) {
+      console.warn("mark-all-read failed:", err);
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  });
 }
 
 function escapeHtml(s) {
