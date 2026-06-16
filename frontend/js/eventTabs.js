@@ -134,9 +134,14 @@ function _mostRecentMarkup(e, activeId, inboxOpen) {
   </div>`;
 }
 
-function _minorToggleMarkup(minor, drawerOpen) {
+function _minorToggleMarkup(minor, drawerOpen, activeId, inboxOpen) {
   const chev = drawerOpen ? "▴" : "▾";
-  return `<div class="event-tab minor-toggle" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${minor.length} more event${minor.length === 1 ? "" : "s"}">
+  const activeInMinor = !drawerOpen && !inboxOpen && activeId != null &&
+    minor.some((e) => e.id === activeId);
+  const cls = ["event-tab", "minor-toggle", activeInMinor ? "active" : ""]
+    .filter(Boolean)
+    .join(" ");
+  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${minor.length} more event${minor.length === 1 ? "" : "s"}">
     <div class="name two-line"><span>${minor.length} Minor Event${minor.length === 1 ? "" : "s"}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">click to ${drawerOpen ? "hide" : "show"}</div>
   </div>`;
@@ -230,7 +235,7 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     parts.push(_mostRecentMarkup(mostRecent, activeId, inboxOpen));
   }
   if (minor.length > 0) {
-    parts.push(_minorToggleMarkup(minor, drawerOpen));
+    parts.push(_minorToggleMarkup(minor, drawerOpen, activeId, inboxOpen));
   }
   parts.push("</div>");
 

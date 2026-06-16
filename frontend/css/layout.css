@@ -283,6 +283,21 @@ body {
   background: var(--bg-elev-2);
   border-style: solid;
 }
+.event-tab.minor-toggle.active {
+  background: var(--accent) !important;
+  color: #0f1419 !important;
+  border-style: solid !important;
+  border-color: var(--accent) !important;
+}
+.event-tab.minor-toggle.active:hover {
+  background: var(--accent) !important;
+}
+.event-tab.minor-toggle.active .name {
+  color: #0f1419 !important;
+}
+.event-tab.minor-toggle.active .minor-toggle-chev {
+  color: #0f1419 !important;
+}
 .event-tab.minor-toggle .name {
   display: flex;
   flex-direction: row;
