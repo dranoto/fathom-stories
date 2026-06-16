@@ -182,17 +182,25 @@ async function bootstrap() {
   });
 
   window.addEventListener("reader-closed", async () => {
+    if (isDesktopLayout()) return;
     await refreshReadIds();
-    await refreshEvents();
     await refreshInboxCounts();
+    if (getInboxOpen()) {
+      await renderInboxPane();
+    } else {
+      const activeId = getActiveEventId();
+      if (activeId) {
+        await renderActiveEventPane(activeId);
+      }
+    }
   });
 
   await refreshReadIds();
   await refreshInboxCounts();
   await refreshEvents();
-  const initialActiveId = getActiveEventId();
-  if (!getInboxOpen() && initialActiveId != null && isDesktopLayout()) {
-    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: initialActiveId } }));
+  const currentActiveId = getActiveEventId();
+  if (isDesktopLayout() && !getInboxOpen() && currentActiveId != null) {
+    window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: currentActiveId } }));
   }
   await refreshStats();
 }

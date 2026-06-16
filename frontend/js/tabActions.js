@@ -3,6 +3,7 @@ import { markEventVisited } from "./apiService.js";
 import { setInboxOpen, getInboxOpen, setActiveEventId, getActiveEventId, getEvents, getUngroupedArticles, setMinorDrawerOpen, getMinorDrawerOpen } from "./state.js";
 import { renderEventTabs } from "./eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./timeline.js";
+import { isDesktopLayout } from "./layout.js";
 
 function scrollActiveTabIntoView() {
   requestAnimationFrame(() => {
@@ -33,9 +34,11 @@ export async function selectInboxTab() {
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderInboxPane();
-  const articles = getUngroupedArticles();
-  if (articles.length > 0) {
-    window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: articles[0].id } }));
+  if (isDesktopLayout()) {
+    const articles = getUngroupedArticles();
+    if (articles.length > 0) {
+      window.dispatchEvent(new CustomEvent("open-reader", { detail: { articleId: articles[0].id } }));
+    }
   }
 }
 

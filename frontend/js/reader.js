@@ -309,6 +309,7 @@ function setupRemoveButton(article) {
 }
 
 export function closeReader() {
+  if (isDesktopLayout()) return;
   if (chatAbortController) {
     chatAbortController.abort();
     chatAbortController = null;
