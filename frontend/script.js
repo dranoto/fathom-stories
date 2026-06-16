@@ -6,7 +6,7 @@ import {
   setEvents, getEvents, setReadIds, setActiveEventId,
   getActiveEventId, setInboxOpen, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
-import { renderEventTabs, setupEventTabs } from "./js/eventTabs.js";
+import { renderEventTabs, setupEventTabs, buildNavOrder } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader } from "./js/reader.js";
 import { setupSearch } from "./js/search.js";
@@ -111,13 +111,13 @@ async function afterTimerFiredRegroup() {
 
 async function handleSwipeNav(direction) {
   const events = getEvents() || [];
-  const allTabs = [...events.map(e => ({ kind: "event", id: e.id })), { kind: "inbox" }];
+  const allTabs = buildNavOrder(events);
   if (allTabs.length < 2) return;
   const currentEventId = getActiveEventId();
   const inboxOpen = getInboxOpen();
   let currentIdx;
   if (inboxOpen) {
-    currentIdx = allTabs.length - 1;
+    currentIdx = 0;
   } else if (currentEventId) {
     currentIdx = allTabs.findIndex(t => t.kind === "event" && t.id === currentEventId);
     if (currentIdx < 0) currentIdx = 0;
@@ -176,6 +176,17 @@ async function bootstrap() {
 
   window.addEventListener("read-state-changed", () => {
     renderEventTabs(onTabSelect, onInboxSelect, toggleMinorDrawer);
+  });
+
+  window.addEventListener("event-seen-changed", () => {
+    renderEventTabs(onTabSelect, onInboxSelect, toggleMinorDrawer);
+  });
+
+  window.addEventListener("sort-mode-changed", async () => {
+    await refreshEvents();
+    await refreshInboxCounts();
+    await refreshReadIds();
+    await refreshStats();
   });
 
   window.addEventListener("reader-closed", async () => {

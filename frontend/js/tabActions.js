@@ -1,6 +1,6 @@
 // frontend/js/tabActions.js
 import { markEventVisited } from "./apiService.js";
-import { setInboxOpen, getInboxOpen, setActiveEventId, getActiveEventId, getEvents, getUngroupedArticles, setMinorDrawerOpen, getMinorDrawerOpen } from "./state.js";
+import { setInboxOpen, getInboxOpen, setActiveEventId, getActiveEventId, getEvents, getUngroupedArticles, setMinorDrawerOpen, getMinorDrawerOpen, markEventSeen } from "./state.js";
 import { renderEventTabs } from "./eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./timeline.js";
 import { isDesktopLayout } from "./layout.js";
@@ -23,6 +23,7 @@ export async function selectEventTab(eventId, { skipOpen = false } = {}) {
   setInboxOpen(false);
   setActiveEventId(eventId);
   markEventVisited(eventId).catch(() => {});
+  markEventSeen(eventId);
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
@@ -59,6 +60,7 @@ window.addEventListener("navigate-to-event", async (e) => {
   setInboxOpen(false);
   setActiveEventId(eventId);
   markEventVisited(eventId).catch(() => {});
+  markEventSeen(eventId);
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);
