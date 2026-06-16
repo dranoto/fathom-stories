@@ -4,6 +4,7 @@ let activeEventId = null;
 let activeEventDetail = null;
 let readArticleIds = new Set();
 let inboxOpen = false;
+let minorDrawerOpen = false;
 let ungroupedArticles = [];
 let inboxTotal = 0;
 let inboxUnread = 0;
@@ -25,6 +26,12 @@ export function markUnread(articleId) { readArticleIds.delete(articleId); }
 export function setReadIds(ids) { readArticleIds = new Set(ids); }
 export function getInboxOpen() { return inboxOpen; }
 export function setInboxOpen(v) { inboxOpen = v; }
+export function getMinorDrawerOpen() { return minorDrawerOpen; }
+export function setMinorDrawerOpen(v) {
+  if (minorDrawerOpen === v) return;
+  minorDrawerOpen = v;
+  window.dispatchEvent(new CustomEvent("minor-drawer-toggled", { detail: { open: v } }));
+}
 export function getUngroupedArticles() { return ungroupedArticles; }
 export function setUngroupedArticles(v) { ungroupedArticles = v; }
 export function getInboxCounts() { return { total: inboxTotal, read: inboxRead, unread: inboxUnread }; }

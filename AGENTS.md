@@ -210,6 +210,10 @@ scraper_assistant/        # bypass-paywalls extension (gitignored)
 
 **Reader-driven corrections** (move-to-event, remove-from-event) write `GroupingFeedback` rows. Top 5 most recent are injected into the next LLM call as few-shot examples (the "editor corrections are ground truth" section).
 
+**Event bar layout** (frontend, `frontend/js/eventTabs.js`):
+- Bar is partitioned into 4 sections in order: **Inbox** → **Top 3** (3 events with the highest `article_count`, with `last_article_at` as tiebreaker) → **Most Recent** (single event with the latest `created_at`, marked with a "New" pill and tinted background; if it overlaps a Top 3 card, the 4th-by-count takes its place so Top 3 + Most Recent are always 4 distinct cards) → **Minor Events drawer** (a toggle card showing the count of all remaining events, click pulls down a vertical stack of the same-width event cards via a 200ms max-height transition).
+- Every event card is `width: 180px; flex: 0 0 180px;` (fixed). Titles clamp to 2 lines with `-webkit-line-clamp`. The "New" tag on the most-recent card uses `--accent` background. The minor-toggle card has a dashed border to distinguish it from real events.
+
 ## LLM Configuration
 
 Uses **OpenAI-compatible API** via LangChain's `ChatOpenAI`. Gemini is explicitly not supported.

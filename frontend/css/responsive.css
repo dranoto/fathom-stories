@@ -60,21 +60,25 @@ body {
 }
 
 .event-tabs {
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 8px;
+  min-height: 44px;
+}
+.event-tabs .event-bar-row {
   overflow-x: auto;
   overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding: 0 12px;
-  min-height: 44px;
-  align-items: center;
-  gap: 2px;
+  -webkit-overflow-scrolling: touch;
+  gap: 6px;
 }
-.event-tabs::-webkit-scrollbar { display: none; }
+.event-tabs .event-bar-row::-webkit-scrollbar { display: none; }
 .event-tab {
-  padding: 10px 12px;
+  padding: 6px 8px;
   font-size: 12px;
   min-height: 44px;
   flex-shrink: 0;
+  width: 180px;
+  flex: 0 0 180px;
 }
 .event-tab .badge {
   font-size: 10px;
@@ -548,20 +552,20 @@ body {
    ============================================================= */
 @media (min-width: 1024px) {
   .app-header { padding: 10px 20px; }
-  .event-tabs {
+  .event-tabs .event-bar-row {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
-  .event-tabs::-webkit-scrollbar {
+  .event-tabs .event-bar-row::-webkit-scrollbar {
     display: block;
     height: 6px;
   }
-  .event-tabs::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-  .event-tabs::-webkit-scrollbar-thumb {
+  .event-tabs .event-bar-row::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+  .event-tabs .event-bar-row::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
     border-radius: 3px;
   }
-  .event-tabs::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+  .event-tabs .event-bar-row::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
   .event-header h1 { font-size: 22px; }
   .timeline { gap: 12px; }
   .timeline::before { left: 80px; }
