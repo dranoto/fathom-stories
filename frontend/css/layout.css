@@ -333,20 +333,16 @@ body {
 }
 .minor-drawer .event-tab {
   width: 180px;
-  flex: 0 0 auto;
-  min-height: 0;
-  padding: 6px 10px;
-  font-size: 12px;
+  flex: 0 0 180px;
 }
-.minor-drawer .event-tab .name {
-  min-height: 0;
-  line-height: 1.3;
-  -webkit-line-clamp: 1;
+.minor-drawer .event-tab.active {
+  background: var(--accent);
+  color: #0f1419;
+  border-color: var(--accent);
 }
-.minor-drawer .event-tab .meta {
-  font-size: 10px;
-  margin-top: 2px;
-}
+.minor-drawer .event-tab.active .name { color: #0f1419; }
+.minor-drawer .event-tab.active .meta { color: rgba(15, 20, 25, 0.75); }
+.minor-drawer .event-tab.active .unread-dot { background: #0f1419; }
 
 @media (max-width: 640px) {
   .event-tab {
