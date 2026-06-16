@@ -146,6 +146,40 @@ def cmd_fetch(_args):
     asyncio.run(runner())
 
 
+def cmd_purge_percent_off(args):
+    import re
+    from .database.models import Article
+    from .rss_client import PERCENT_OFF_PATTERN
+
+    create_db_and_tables()
+
+    with db_session_scope() as db:
+        matches = []
+        for a in db.query(Article).all():
+            if a.title and PERCENT_OFF_PATTERN.search(a.title):
+                matches.append(a)
+
+    if not matches:
+        print("No articles with '% off' in the title. Nothing to do.")
+        return
+
+    print(f"Found {len(matches)} article(s) with '% off' in the title:")
+    for a in matches[:20]:
+        pub = a.publisher_name or "(unknown)"
+        print(f"  - id={a.id} {pub}: {a.title[:90]!r}")
+    if len(matches) > 20:
+        print(f"  ... and {len(matches) - 20} more.")
+
+    if not args.apply:
+        print("\nDry-run only. Re-run with --apply to commit.")
+        return
+
+    ids = [a.id for a in matches]
+    with db_session_scope() as db:
+        n = db.query(Article).filter(Article.id.in_(ids)).delete(synchronize_session=False)
+    print(f"\nDeleted {n} article(s).")
+
+
 def cmd_cleanup_bad(_args):
     from sqlalchemy import or_, func
     from .database.models import Article
@@ -541,6 +575,13 @@ def main():
     p_bf48.set_defaults(func=cmd_backfill_expiry_48h)
     sub.add_parser("seed-feeds", help="Add feeds from .env RSS_FEED_URLS").set_defaults(func=cmd_seed_feeds)
     sub.add_parser("cleanup-bad", help="Delete articles with scraping errors or below MIN_ARTICLE_WORD_COUNT").set_defaults(func=cmd_cleanup_bad)
+
+    p_pctoff = sub.add_parser(
+        "purge-percent-off",
+        help="One-shot: delete articles whose title contains '% off' (promo/deal spam). Dry-run by default.",
+    )
+    p_pctoff.add_argument("--apply", action="store_true", help="Commit the deletion (default: dry-run)")
+    p_pctoff.set_defaults(func=cmd_purge_percent_off)
     sub.add_parser("fetch", help="One-shot RSS fetch + scrape").set_defaults(func=cmd_fetch)
     sub.add_parser("group", help="One-shot live grouping").set_defaults(func=cmd_group)
     sub.add_parser("regroup", help="One-shot forced regroup of ungrouped articles (creates events when 2+ match)").set_defaults(func=cmd_regroup)

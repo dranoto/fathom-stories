@@ -1,4 +1,5 @@
 # app/rss_client.py
+import re
 import feedparser
 import asyncio
 import logging # Added logging
@@ -15,6 +16,8 @@ from .scraper import scrape_urls # Import the updated scraper function
 from langchain_core.documents import Document as LangchainDocument # For type hinting
 
 logger = logging.getLogger(__name__) # Added logger
+
+PERCENT_OFF_PATTERN = re.compile(r"%\s*off", re.IGNORECASE)
 
 
 def now_dt():
@@ -170,7 +173,13 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
 
         if not title: logger.warning(f"RSS_CLIENT: Feed entry for {article_url} missing 'title'. Skipping."); continue
         if not published_date_dt: logger.warning(f"RSS_CLIENT: Feed entry for {article_url} (Title: {title}) missing valid 'published_date'. Skipping."); continue
-            
+
+        if PERCENT_OFF_PATTERN.search(title):
+            logger.info(
+                f"RSS_CLIENT: dropping {article_url} — title matches '% off' (promo/deal): {title[:80]!r}"
+            )
+            continue
+
         urls_to_scrape.append(article_url)
         feed_entries_map[article_url] = entry # Store entry for later use
 
