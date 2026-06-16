@@ -333,7 +333,7 @@ body {
 }
 .minor-drawer .event-tab {
   width: 180px;
-  flex: 0 0 180px;
+  flex-shrink: 0;
 }
 .minor-drawer .event-tab.active {
   background: var(--accent);

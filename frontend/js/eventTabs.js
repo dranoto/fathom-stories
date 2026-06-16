@@ -186,6 +186,12 @@ function _renderDrawer(minor, drawerOpen) {
   el.setAttribute("data-open", drawerOpen ? "1" : "0");
   el.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
   el.innerHTML = minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
+
+  const activeCards = el.querySelectorAll(".event-tab.active");
+  if (activeCards.length > 0) {
+    console.log("drawer active cards:", Array.from(activeCards).map((c) => c.dataset.eventId));
+  }
+
   el.querySelectorAll(".event-tab[data-event-id]").forEach((card) => {
     card.addEventListener("click", (e) => {
       e.stopPropagation();
