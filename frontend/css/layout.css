@@ -307,15 +307,12 @@ body {
 }
 
 .minor-drawer {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
   width: 192px;
   max-height: 0;
   overflow: hidden;
   transition: max-height 200ms ease-out, opacity 200ms ease-out;
   opacity: 0;
-  z-index: 200;
+  z-index: 1000;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 8px;

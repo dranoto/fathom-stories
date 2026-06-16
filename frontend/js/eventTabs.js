@@ -139,13 +139,64 @@ function _minorToggleMarkup(minor, drawerOpen) {
   return `<div class="event-tab minor-toggle" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${minor.length} more event${minor.length === 1 ? "" : "s"}">
     <div class="name two-line"><span>${minor.length} Minor Event${minor.length === 1 ? "" : "s"}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">click to ${drawerOpen ? "hide" : "show"}</div>
-    ${_drawerMarkup(minor, drawerOpen)}
   </div>`;
 }
 
-function _drawerMarkup(minor, drawerOpen) {
-  const cards = minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
-  return `<div class="minor-drawer" data-open="${drawerOpen ? "1" : "0"}" aria-hidden="${drawerOpen ? "false" : "true"}">${cards}</div>`;
+let _drawerEl = null;
+
+function _ensureDrawerEl() {
+  if (_drawerEl && document.body && document.body.contains(_drawerEl)) return _drawerEl;
+  _drawerEl = document.createElement("div");
+  _drawerEl.className = "minor-drawer";
+  document.body.appendChild(_drawerEl);
+  return _drawerEl;
+}
+
+function _removeDrawerEl() {
+  if (_drawerEl && _drawerEl.parentNode) {
+    _drawerEl.parentNode.removeChild(_drawerEl);
+  }
+  _drawerEl = null;
+}
+
+function _positionDrawer() {
+  if (!_drawerEl) return;
+  const toggle = document.querySelector(".event-tab[data-minor-toggle]");
+  if (!toggle) return;
+  const rect = toggle.getBoundingClientRect();
+  const drawerWidth = 192;
+  const gap = 6;
+  let left = rect.right - drawerWidth;
+  if (left < 8) left = 8;
+  if (left + drawerWidth > window.innerWidth - 8) {
+    left = window.innerWidth - drawerWidth - 8;
+  }
+  _drawerEl.style.position = "fixed";
+  _drawerEl.style.top = (rect.bottom + gap) + "px";
+  _drawerEl.style.left = left + "px";
+  _drawerEl.style.width = drawerWidth + "px";
+}
+
+function _renderDrawer(minor, drawerOpen) {
+  if (minor.length === 0) {
+    _removeDrawerEl();
+    return;
+  }
+  const el = _ensureDrawerEl();
+  el.setAttribute("data-open", drawerOpen ? "1" : "0");
+  el.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
+  el.innerHTML = minor.map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item")).join("");
+  el.querySelectorAll(".event-tab[data-event-id]").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = parseInt(card.dataset.eventId, 10);
+      setActiveEventId(id);
+      if (_lastCallbacks && typeof _lastCallbacks.onSelectEvent === "function") {
+        _lastCallbacks.onSelectEvent(id);
+      }
+    });
+  });
+  _positionDrawer();
 }
 
 let _lastCallbacks = null;
@@ -162,6 +213,7 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
 
   if (!events.length && inboxN === 0) {
     container.innerHTML = `<div class="tabs-empty">No events yet — fetch and regroup some articles.</div>`;
+    _removeDrawerEl();
     return;
   }
 
@@ -195,8 +247,7 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     el.addEventListener("click", () => onSelectInbox());
   });
   container.querySelectorAll(".event-tab[data-minor-toggle]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      if (e.target.closest(".minor-drawer")) return;
+    el.addEventListener("click", () => {
       if (typeof onToggleMinor === "function") {
         onToggleMinor();
       } else {
@@ -205,6 +256,8 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
       }
     });
   });
+
+  _renderDrawer(minor, drawerOpen);
 }
 
 export { INBOX_ID };
@@ -225,7 +278,6 @@ export function setupEventTabs() {
   barRow.addEventListener(
     "wheel",
     (e) => {
-      if (e.target && e.target.closest && e.target.closest(".minor-drawer")) return;
       if (e.deltaY === 0 && e.deltaX === 0) return;
       e.preventDefault();
       barRow.scrollLeft += e.deltaY + e.deltaX;
@@ -244,6 +296,17 @@ export function setupEventTabs() {
           _lastCallbacks.onToggleMinor
         );
       }
+      if (getMinorDrawerOpen()) _positionDrawer();
     }, 120);
   });
+
+  let scrollFrame = null;
+  window.addEventListener("scroll", () => {
+    if (!getMinorDrawerOpen()) return;
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      _positionDrawer();
+    });
+  }, { passive: true });
 }
