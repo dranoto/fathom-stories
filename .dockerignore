@@ -1,0 +1,53 @@
+# Python build context
+.git
+.gitignore
+.gitattributes
+.github
+.venv
+venv
+env
+.python-version
+
+# Bytecode / caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data — the live SQLite DB and logs MUST live outside the image so the
+# bind mount in docker-compose.yml can take ownership. The DB on disk is the
+# single source of truth and is also gitignored.
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite3
+data/*.sqlite-*
+logs
+*.log
+
+# The bypass-paywalls extension is cloned into the image at build time; never
+# COPY a host copy in (it would shadow the build-time clone and break
+# reproducibility).
+scraper_assistant
+
+# Tests / docs that are not needed at runtime
+tests
+docs
+*.md
+!README.md
+
+# Docker artifacts at the repo root (don't recurse into build context)
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+!docker/

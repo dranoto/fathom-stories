@@ -1,0 +1,33 @@
+name: fathom-stories
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fathom-stories:local
+    container_name: fathom-stories
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MAIN_PORT: "${MAIN_PORT:-8800}"
+      DATABASE_URL: "sqlite:///./data/stories.db"
+      PATH_TO_EXTENSION: "/app/scraper_assistant"
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "${MAIN_PORT:-8800}:8800"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8800/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
