@@ -118,8 +118,8 @@ def _event_summary_for_prompt(event: Event, max_titles: int = 5) -> Dict[str, An
     }
 
 
-def _article_for_prompt(article: Article) -> Dict[str, Any]:
-    snippet = (article.scraped_text_content or article.rss_description or "")[:500]
+def _article_for_prompt(article: Article, snippet_chars: int = 500) -> Dict[str, Any]:
+    snippet = (article.scraped_text_content or article.rss_description or "")[:snippet_chars]
     return {
         "id": article.id,
         "title": article.title,
@@ -130,9 +130,25 @@ def _article_for_prompt(article: Article) -> Dict[str, Any]:
     }
 
 
-def fetch_ungrouped_articles(limit: Optional[int] = None) -> List[Article]:
+def _chunked(seq: List[Any], size: int):
+    if size <= 0:
+        yield seq
+        return
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def fetch_ungrouped_articles(
+    limit: Optional[int] = None,
+    window_hours: Optional[int] = None,
+) -> List[Article]:
+    window_hours = window_hours if window_hours is not None else app_config.LIVE_GROUP_WINDOW_HOURS
     with db_session_scope() as db:
-        q = db.query(Article).filter(Article.event_id.is_(None)).order_by(desc(Article.published_date))
+        q = db.query(Article).filter(Article.event_id.is_(None))
+        if window_hours and window_hours > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+            q = q.filter(or_(Article.published_date >= cutoff, Article.published_date.is_(None)))
+        q = q.order_by(desc(Article.published_date))
         if limit:
             q = q.limit(limit)
         rows = q.all()
@@ -254,41 +270,56 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
 
 
 async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
-    articles = fetch_ungrouped_articles()
+    articles = fetch_ungrouped_articles(
+        limit=app_config.LIVE_GROUP_MAX_ARTICLES,
+        window_hours=app_config.LIVE_GROUP_WINDOW_HOURS,
+    )
     if not articles:
-        logger.info("GROUPING: no ungrouped articles")
+        logger.info(f"GROUPING: no ungrouped articles in last {app_config.LIVE_GROUP_WINDOW_HOURS}h window")
         return {"existing": 0, "new": 0, "uncategorized": 0, "errors": 0, "skipped": 1}
 
     active, cooling = fetch_active_events()
     active_payload = [_event_summary_for_prompt(e) for e in active]
     cooling_payload = [_event_summary_for_prompt(e) for e in cooling]
-    articles_payload = [_article_for_prompt(a) for a in articles]
 
     few_shot = build_few_shot_examples(limit=5)
     few_shot_block = build_few_shot_block(few_shot)
 
-    prompt = build_group_assign_prompt(
-        active_events=active_payload,
-        cooling_events=cooling_payload,
-        articles=articles_payload,
-        few_shot_block=few_shot_block,
-    )
+    batch_size = max(1, app_config.LIVE_GROUP_BATCH_SIZE)
+    n_batches = (len(articles) + batch_size - 1) // batch_size
+    logger.info(f"GROUPING: {len(articles)} articles in {n_batches} batch(es) of {batch_size}")
 
-    try:
-        response = await llm.agenerate([[HumanMessage(content=prompt)]])
-        content = response.generations[0][0].text
-    except Exception as e:
-        logger.error(f"GROUPING: LLM call failed: {e}", exc_info=True)
-        return {"existing": 0, "new": 0, "uncategorized": 0, "errors": 1, "skipped": 0}
+    all_assignments: List[Dict[str, Any]] = []
+    counts: Dict[str, int] = {
+        "existing": 0, "new": 0, "uncategorized": 0, "errors": 0, "skipped": 0,
+    }
+    event_increments: Dict[int, List[int]] = defaultdict(list)
 
-    try:
-        parsed = _parse_response(content)
-    except Exception as e:
-        logger.error(f"GROUPING: failed to parse LLM response: {e}\nContent: {content[:1000]}")
-        return {"existing": 0, "new": 0, "uncategorized": 0, "errors": 1, "skipped": 0}
+    for idx, chunk in enumerate(_chunked(articles, batch_size), start=1):
+        chunk_increments = await _assign_chunk(
+            llm=llm,
+            chunk=chunk,
+            idx=idx,
+            n_batches=n_batches,
+            active_payload=active_payload,
+            cooling_payload=cooling_payload,
+            few_shot_block=few_shot_block,
+        )
+        if chunk_increments is None:
+            counts["errors"] += len(chunk)
+            continue
+        all_assignments.extend(chunk_increments[0])
+        for ev_id, ids in chunk_increments[1].items():
+            event_increments[ev_id].extend(ids)
 
-    assignments = parsed.get("assignments", [])
-    counts, event_increments = _apply_live(assignments)
+    if all_assignments:
+        applied_counts, applied_increments = _apply_live(all_assignments)
+        counts["existing"] += applied_counts.get("existing", 0)
+        counts["new"] += applied_counts.get("new", 0)
+        counts["uncategorized"] += applied_counts.get("uncategorized", 0)
+        counts["errors"] += applied_counts.get("errors", 0)
+        for ev_id, ids in applied_increments.items():
+            event_increments[ev_id].extend(ids)
 
     from .summary_service import generate_incremental_summary_for_event
     for event_id, new_ids in event_increments.items():
@@ -300,54 +331,136 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
     return counts
 
 
-async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
-    articles = fetch_ungrouped_articles(limit=100)
-    if not articles:
-        logger.info("REGROUP: no ungrouped articles")
-        return {"existing": 0, "new_events": 0, "new_singletons": 0, "uncategorized": 0, "errors": 0, "skipped": 1}
+def _is_context_overflow(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    if name in ("OpenAIContextOverflowError", "ContextOverflowError"):
+        return True
+    msg = str(exc)
+    return "context_length_exceeded" in msg or "context length" in msg.lower()
 
-    active, cooling = fetch_active_events()
-    active_payload = [_event_summary_for_prompt(e) for e in active]
-    cooling_payload = [_event_summary_for_prompt(e) for e in cooling]
-    articles_payload = [_article_for_prompt(a) for a in articles]
 
-    few_shot = build_few_shot_examples(limit=5)
-    few_shot_block = build_few_shot_block(few_shot)
-
-    prompt = build_regroup_prompt(
+async def _assign_chunk(
+    llm: ChatOpenAI,
+    chunk: List[Article],
+    idx: int,
+    n_batches: int,
+    active_payload: List[Dict[str, Any]],
+    cooling_payload: List[Dict[str, Any]],
+    few_shot_block: str,
+) -> Optional[Tuple[List[Dict[str, Any]], Dict[int, List[int]]]]:
+    payload = [_article_for_prompt(a) for a in chunk]
+    prompt = build_group_assign_prompt(
         active_events=active_payload,
         cooling_events=cooling_payload,
-        articles=articles_payload,
+        articles=payload,
         few_shot_block=few_shot_block,
     )
 
-    try:
-        response = await llm.agenerate([[HumanMessage(content=prompt)]])
-        content = response.generations[0][0].text
-    except Exception as e:
-        logger.error(f"REGROUP: LLM call failed: {e}", exc_info=True)
-        return {"existing": 0, "new_events": 0, "new_singletons": 0, "uncategorized": 0, "errors": 1, "skipped": 0}
+    content: Optional[str] = None
+    for attempt, snippet_chars in enumerate((500, 200), start=1):
+        try:
+            response = await llm.agenerate([[HumanMessage(content=prompt)]])
+            content = response.generations[0][0].text
+            break
+        except Exception as e:
+            if attempt == 1 and _is_context_overflow(e):
+                logger.warning(
+                    f"GROUPING: batch {idx}/{n_batches} overflow ({e}); retrying with snippet_chars=200"
+                )
+                payload = [_article_for_prompt(a, snippet_chars=snippet_chars) for a in chunk]
+                prompt = build_group_assign_prompt(
+                    active_events=active_payload,
+                    cooling_events=cooling_payload,
+                    articles=payload,
+                    few_shot_block=few_shot_block,
+                )
+                continue
+            logger.error(f"GROUPING: batch {idx}/{n_batches} LLM call failed: {e}", exc_info=True)
+            return None
+
+    if content is None:
+        return None
 
     try:
         parsed = _parse_response(content)
     except Exception as e:
-        logger.error(f"REGROUP: failed to parse LLM response: {e}\nContent: {content[:1000]}")
-        return {"existing": 0, "new_events": 0, "new_singletons": 0, "uncategorized": 0, "errors": 1, "skipped": 0}
+        logger.error(f"GROUPING: batch {idx}/{n_batches} parse failed: {e}\n{content[:1000]}")
+        return None
 
-    assignments = parsed.get("assignments", [])
-    counts, (new_event_ids, event_increments) = _apply_regroup_inner(assignments)
+    return parsed.get("assignments", []), {}
+
+
+async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
+    articles = fetch_ungrouped_articles(limit=100)
+    if not articles:
+        logger.info("REGROUP: no ungrouped articles")
+        return {"existing": 0, "new_events": 0, "new_singletons": 0, "uncategorized": 0, "errors": 0, "skipped": 1, "batches": 0, "batches_failed": 0}
+
+    active, cooling = fetch_active_events()
+    active_payload = [_event_summary_for_prompt(e) for e in active]
+    cooling_payload = [_event_summary_for_prompt(e) for e in cooling]
+
+    few_shot = build_few_shot_examples(limit=5)
+    few_shot_block = build_few_shot_block(few_shot)
+
+    batch_size = max(1, app_config.REGROUP_BATCH_SIZE)
+    total_counts = {
+        "existing": 0, "new_events": 0, "revived": 0, "reused": 0,
+        "new_singletons": 0, "uncategorized": 0, "errors": 0,
+        "batches": 0, "batches_failed": 0,
+    }
+    all_new_event_ids: List[int] = []
+    event_increments: Dict[int, List[int]] = defaultdict(list)
+    n_batches = (len(articles) + batch_size - 1) // batch_size
+    logger.info(f"REGROUP: {len(articles)} articles in {n_batches} batch(es) of {batch_size}")
+
+    for idx, chunk in enumerate(_chunked(articles, batch_size), start=1):
+        payload = [_article_for_prompt(a) for a in chunk]
+        prompt = build_regroup_prompt(
+            active_events=active_payload,
+            cooling_events=cooling_payload,
+            articles=payload,
+            few_shot_block=few_shot_block,
+        )
+        try:
+            response = await llm.agenerate([[HumanMessage(content=prompt)]])
+            content = response.generations[0][0].text
+        except Exception as e:
+            logger.error(f"REGROUP: batch {idx}/{n_batches} LLM call failed: {e}")
+            total_counts["batches_failed"] += 1
+            total_counts["errors"] += len(chunk)
+            continue
+
+        try:
+            parsed = _parse_response(content)
+        except Exception as e:
+            logger.error(f"REGROUP: batch {idx}/{n_batches} parse failed: {e}\n{content[:1000]}")
+            total_counts["batches_failed"] += 1
+            total_counts["errors"] += len(chunk)
+            continue
+
+        assignments = parsed.get("assignments", [])
+        chunk_counts, (new_event_ids, chunk_increments) = _apply_regroup_inner(assignments)
+        for k, v in chunk_counts.items():
+            if k in total_counts:
+                total_counts[k] += v
+        total_counts["batches"] += 1
+        all_new_event_ids.extend(new_event_ids)
+        for ev_id, new_ids in chunk_increments.items():
+            event_increments[ev_id].extend(new_ids)
 
     from .summary_service import (
         generate_initial_summary_for_event,
         generate_incremental_summary_for_event,
     )
-    for new_event_id in new_event_ids:
+    new_event_ids_set = set(all_new_event_ids)
+    for new_event_id in all_new_event_ids:
         try:
             await generate_initial_summary_for_event(new_event_id, llm)
         except Exception as e:
             logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
     for event_id, new_ids in event_increments.items():
-        if event_id in new_event_ids:
+        if event_id in new_event_ids_set:
             continue
         try:
             await generate_incremental_summary_for_event(event_id, new_ids, llm)
@@ -361,8 +474,9 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
     except Exception as e:
         logger.error(f"REGROUP: dedup pass failed: {e}", exc_info=True)
 
-    counts["dedup"] = dedup_counts
-    return counts
+    total_counts["dedup"] = dedup_counts
+    logger.info(f"REGROUP: applied assignments {total_counts}")
+    return total_counts
 
 
 def apply_regroup_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:

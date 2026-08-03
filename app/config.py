@@ -60,6 +60,30 @@ except ValueError:
     LIVE_GROUPING_INTERVAL_MINUTES = 60
 
 try:
+    REGROUP_BATCH_SIZE = int(os.getenv("REGROUP_BATCH_SIZE", "20"))
+except ValueError:
+    logger.warning("Invalid REGROUP_BATCH_SIZE in .env. Using default 20.")
+    REGROUP_BATCH_SIZE = 20
+
+try:
+    LIVE_GROUP_BATCH_SIZE = int(os.getenv("LIVE_GROUP_BATCH_SIZE", "200"))
+except ValueError:
+    logger.warning("Invalid LIVE_GROUP_BATCH_SIZE in .env. Using default 200.")
+    LIVE_GROUP_BATCH_SIZE = 200
+
+try:
+    LIVE_GROUP_MAX_ARTICLES = int(os.getenv("LIVE_GROUP_MAX_ARTICLES", "200"))
+except ValueError:
+    logger.warning("Invalid LIVE_GROUP_MAX_ARTICLES in .env. Using default 200.")
+    LIVE_GROUP_MAX_ARTICLES = 200
+
+try:
+    LIVE_GROUP_WINDOW_HOURS = int(os.getenv("LIVE_GROUP_WINDOW_HOURS", "24"))
+except ValueError:
+    logger.warning("Invalid LIVE_GROUP_WINDOW_HOURS in .env. Using default 24.")
+    LIVE_GROUP_WINDOW_HOURS = 24
+
+try:
     RECLUSTER_HOUR_UTC = int(os.getenv("RECLUSTER_HOUR_UTC", 3))
 except ValueError:
     logger.warning("Invalid RECLUSTER_HOUR_UTC in .env. Using default 3.")
@@ -134,6 +158,21 @@ try:
 except ValueError:
     logger.warning("Invalid SCORE_MAGNITUDE_CAP in .env. Using default 6.0.")
     SCORE_MAGNITUDE_CAP = 6.0
+try:
+    SCORE_NEW_EVENT_BOOST_HOURS = float(os.getenv("SCORE_NEW_EVENT_BOOST_HOURS", "6.0"))
+except ValueError:
+    logger.warning("Invalid SCORE_NEW_EVENT_BOOST_HOURS in .env. Using default 6.0.")
+    SCORE_NEW_EVENT_BOOST_HOURS = 6.0
+try:
+    SCORE_NEW_EVENT_BOOST_MAX = float(os.getenv("SCORE_NEW_EVENT_BOOST_MAX", "5.0"))
+except ValueError:
+    logger.warning("Invalid SCORE_NEW_EVENT_BOOST_MAX in .env. Using default 5.0.")
+    SCORE_NEW_EVENT_BOOST_MAX = 5.0
+try:
+    SCORE_READ_ALL_DEMOTION = float(os.getenv("SCORE_READ_ALL_DEMOTION", "0.3"))
+except ValueError:
+    logger.warning("Invalid SCORE_READ_ALL_DEMOTION in .env. Using default 0.3.")
+    SCORE_READ_ALL_DEMOTION = 0.3
 
 # --- Scraper Configuration ---
 USER_AGENT = os.getenv(
@@ -526,5 +565,12 @@ logger.info(
     f"PURGE_ARCHIVE_AFTER_DAYS={PURGE_ARCHIVE_AFTER_DAYS}, PURGE_BATCH_LIMIT={PURGE_BATCH_LIMIT}, "
     f"PURGE_EMPTY_BATCH_LIMIT={PURGE_EMPTY_BATCH_LIMIT}, PURGE_EMPTY_FLOOR_SECONDS={PURGE_EMPTY_FLOOR_SECONDS}"
 )
+logger.info(f"CONFIG: LIVE_GROUP_BATCH_SIZE={LIVE_GROUP_BATCH_SIZE}, LIVE_GROUP_MAX_ARTICLES={LIVE_GROUP_MAX_ARTICLES}, LIVE_GROUP_WINDOW_HOURS={LIVE_GROUP_WINDOW_HOURS}")
 logger.info(f"CONFIG: CHAT_MCP_SERVERS={len(CHAT_MCP_SERVERS)} configured")
+logger.info(
+    f"CONFIG: SCORE_LOG_BASE={SCORE_LOG_BASE}, SCORE_FRESHNESS_HALF_LIFE_HOURS={SCORE_FRESHNESS_HALF_LIFE_HOURS}, "
+    f"SCORE_IMPORTANCE_FLOOR={SCORE_IMPORTANCE_FLOOR}, SCORE_MAGNITUDE_CAP={SCORE_MAGNITUDE_CAP}, "
+    f"SCORE_NEW_EVENT_BOOST_HOURS={SCORE_NEW_EVENT_BOOST_HOURS}, SCORE_NEW_EVENT_BOOST_MAX={SCORE_NEW_EVENT_BOOST_MAX}, "
+    f"SCORE_READ_ALL_DEMOTION={SCORE_READ_ALL_DEMOTION}"
+)
 logger.info(f"CONFIG: MAIN_PORT={MAIN_PORT}")
