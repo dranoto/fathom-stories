@@ -57,6 +57,9 @@ async def list_events(
     score_half_life: Optional[float] = Query(None, ge=1.0, le=96.0, description="Override SCORE_FRESHNESS_HALF_LIFE_HOURS"),
     score_floor: Optional[float] = Query(None, ge=0.0, le=1.0, description="Override SCORE_IMPORTANCE_FLOOR"),
     score_cap: Optional[float] = Query(None, ge=1.0, le=20.0, description="Override SCORE_MAGNITUDE_CAP"),
+    score_new_boost_hours: Optional[float] = Query(None, ge=0.0, le=168.0, description="Override SCORE_NEW_EVENT_BOOST_HOURS — boost window for newly-created events"),
+    score_new_boost_max: Optional[float] = Query(None, ge=1.0, le=20.0, description="Override SCORE_NEW_EVENT_BOOST_MAX — multiplier at creation, decays linearly to 1.0 at the window boundary"),
+    score_read_demotion: Optional[float] = Query(None, ge=0.0, le=1.0, description="Override SCORE_READ_ALL_DEMOTION — multiplier on score when an event has article_count > 0 and unread_count == 0"),
     visitor_id: str = Depends(get_visitor_id),
     db: SQLAlchemySession = Depends(database.get_db),
 ):
@@ -106,6 +109,9 @@ async def list_events(
     half_life = score_half_life if score_half_life is not None else app_config.SCORE_FRESHNESS_HALF_LIFE_HOURS
     floor_w = score_floor if score_floor is not None else app_config.SCORE_IMPORTANCE_FLOOR
     cap = score_cap if score_cap is not None else app_config.SCORE_MAGNITUDE_CAP
+    boost_hours = score_new_boost_hours if score_new_boost_hours is not None else app_config.SCORE_NEW_EVENT_BOOST_HOURS
+    boost_max = score_new_boost_max if score_new_boost_max is not None else app_config.SCORE_NEW_EVENT_BOOST_MAX
+    read_demotion = score_read_demotion if score_read_demotion is not None else app_config.SCORE_READ_ALL_DEMOTION
     read_article_ids_subq = (
         db.query(ArticleRead.article_id)
         .filter(ArticleRead.visitor_id == visitor_id)
@@ -150,10 +156,33 @@ async def list_events(
             )
             new_since_visit[ev.id] = int(n)
 
+    newness_boost_by_id: Dict[int, float] = {}
+    for ev in events:
+        newness_boost = 1.0
+        if boost_hours and boost_hours > 0 and boost_max and boost_max > 1.0:
+            created_at = ev.created_at
+            if created_at is not None:
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                age_hours = max(0.0, (now_ts - created_at).total_seconds() / 3600.0)
+                if age_hours < boost_hours:
+                    proximity = 1.0 - (age_hours / boost_hours)
+                    newness_boost = 1.0 + (boost_max - 1.0) * proximity
+        newness_boost_by_id[ev.id] = newness_boost
+
+    read_demotion_by_id: Dict[int, float] = {}
+    for ev in events:
+        article_count = article_counts.get(ev.id, 0)
+        unread_count = unread_counts.get(ev.id, 0)
+        fully_read = article_count > 0 and unread_count == 0
+        read_demotion_by_id[ev.id] = read_demotion if fully_read else 1.0
+
     result = []
     for ev in events:
         article_count = article_counts.get(ev.id, 0)
         importance_avg = float(importance_avgs.get(ev.id) or 0.0)
+        newness_boost = newness_boost_by_id.get(ev.id, 1.0)
+        demotion = read_demotion_by_id.get(ev.id, 1.0)
         score_value = None
         if sort == "score":
             import math
@@ -169,7 +198,7 @@ async def list_events(
             else:
                 freshness = 0.5
             importance_floor = floor_w + (1.0 - floor_w) * max(0.0, min(1.0, importance_avg))
-            score_value = magnitude * freshness * importance_floor
+            score_value = magnitude * freshness * importance_floor * newness_boost * demotion
         result.append(EventResponse(
             id=ev.id,
             name=ev.name,
@@ -200,7 +229,8 @@ async def list_events(
     else:
         result.sort(
             key=lambda r: (
-                -(r.article_count or 0),
+                -(((r.article_count or 0) + (newness_boost_by_id.get(r.id, 1.0) - 1.0) * 1000.0)
+                  * read_demotion_by_id.get(r.id, 1.0)),
                 -(r.last_article_at.timestamp() if r.last_article_at else 0),
                 -(r.created_at.timestamp() if r.created_at else 0),
             )

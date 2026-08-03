@@ -22,6 +22,9 @@ const DEFAULT_SCORE_KNOBS = {
   halfLifeHours: 8.0,
   importanceFloor: 0.5,
   magnitudeCap: 6.0,
+  newEventBoostHours: 6.0,
+  newEventBoostMax: 5.0,
+  readAllDemotion: 0.3,
 };
 
 function _readSortMode() {

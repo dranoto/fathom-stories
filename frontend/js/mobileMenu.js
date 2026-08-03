@@ -18,6 +18,7 @@ let onRunAfterRefresh = null;
 let cachedStats = null;
 let cachedFeeds = null;
 let panelEl = null;
+let _nav = null;
 
 async function refreshCachedStats() {
   try { cachedStats = await stats(); } catch (_) { cachedStats = null; }
@@ -164,6 +165,9 @@ function buildSortSection() {
     ${_sliderRow("halfLifeHours", "Freshness half-life (h)", 1, 96, 1, knobs.halfLifeHours, "Score halves every N hours of quiet. Lower = more recency-driven.")}
     ${_sliderRow("importanceFloor", "Importance floor", 0, 1, 0.05, knobs.importanceFloor, "0 = importance can zero a story; 0.5 = 50% baseline floor.")}
     ${_sliderRow("magnitudeCap", "Magnitude cap", 1, 20, 0.5, knobs.magnitudeCap, "Caps log-based magnitude. Lower = no mega-event dominance.")}
+    ${_sliderRow("newEventBoostHours", "New event boost window (h)", 0, 48, 1, knobs.newEventBoostHours, "0 = off. Newly-created events get a multiplier that fades to 1× over this many hours.")}
+    ${_sliderRow("newEventBoostMax", "New event boost multiplier", 1, 10, 0.5, knobs.newEventBoostMax, "Multiplier at creation; decays linearly to 1× at the window boundary. 1 = no effect.")}
+    ${_sliderRow("readAllDemotion", "Read-all demotion", 0, 1, 0.05, knobs.readAllDemotion, "0 = fully-read events drop to bottom; 1 = no effect. New article on a fully-read event restores normal ranking automatically.")}
     <div class="menu-knob-preview" data-knob-preview>—</div>
     <button class="mobile-menu-item" data-action="knob-reset">
       <span class="item-icon">↺</span>
@@ -209,7 +213,7 @@ function _updateKnobPreview() {
   preview.textContent = `Top event: ${ev.name} (${ev.article_count} articles, ${ageStr}) → ${score.toFixed(2)}`;
 }
 
-function openMenu() {
+function openMenu({ pushHistory = true } = {}) {
   isOpen = true;
   if (isMobileWidth()) {
     const sheet = document.getElementById("mobile-menu");
@@ -222,6 +226,15 @@ function openMenu() {
       renderPanelBody();
     }
   }
+  if (pushHistory && _nav) _nav.push({ kind: "menu" });
+}
+
+export function openMenuFromHistory() {
+  openMenu({ pushHistory: false });
+}
+
+export function closeMenuFromHistory() {
+  closeMenu();
 }
 
 function closeMenu() {
@@ -250,7 +263,8 @@ function ensureDesktopPanel() {
     if (panelEl.contains(e.target)) return;
     const btn = document.getElementById("btn-menu");
     if (btn && btn.contains(e.target)) return;
-    closeMenu();
+    if (_nav) _nav.closeTop();
+    else closeMenu();
   });
 }
 
@@ -318,7 +332,8 @@ function wireActions(root) {
         return;
       }
       if (action === "refresh") {
-        closeMenu();
+        if (_nav) _nav.closeTop();
+        else closeMenu();
         try {
           const r = await runFetch();
           if (r && r.new_articles > 0) {
@@ -327,7 +342,8 @@ function wireActions(root) {
           window.dispatchEvent(new CustomEvent("article-moved"));
         } catch (e) { alert("Refresh failed: " + e.message); }
       } else if (action === "hard-refresh") {
-        closeMenu();
+        if (_nav) _nav.closeTop();
+        else closeMenu();
         try {
           await clearRuntimeCache();
           const r = await runFetch();
@@ -337,7 +353,8 @@ function wireActions(root) {
           window.dispatchEvent(new CustomEvent("article-moved"));
         } catch (e) { alert("Hard refresh failed: " + e.message); }
       } else if (action === "regroup") {
-        closeMenu();
+        if (_nav) _nav.closeTop();
+        else closeMenu();
         try {
           await runRegroup();
           window.dispatchEvent(new CustomEvent("article-moved"));
@@ -401,7 +418,8 @@ function rescoreLocal() {
 }
 
 async function rescoreAndRefetch() {
-  closeMenu();
+  if (_nav) _nav.closeTop();
+  else closeMenu();
   try {
     const data = await listEvents();
     setEvents(data);
@@ -417,14 +435,16 @@ function rerender() {
   else renderPanelBody();
 }
 
-export function setupMobileMenu(onAfterRefresh) {
+export function setupMobileMenu(nav, onAfterRefresh) {
+  _nav = nav || null;
   onRunAfterRefresh = onAfterRefresh;
   const btn = document.getElementById("btn-menu");
   const close = document.getElementById("btn-menu-close");
   const backdrop = document.getElementById("mobile-menu-backdrop");
   if (btn)   btn.addEventListener("click", async () => {
     if (isOpen) {
-      closeMenu();
+      if (_nav) _nav.closeTop();
+      else closeMenu();
       return;
     }
     if (getMinorDrawerOpen()) {
@@ -434,10 +454,19 @@ export function setupMobileMenu(onAfterRefresh) {
     openMenu();
     if (getSortMode() === "score") _updateKnobPreview();
   });
-  if (close) close.addEventListener("click", () => closeMenu());
-  if (backdrop) backdrop.addEventListener("click", () => closeMenu());
+  if (close) close.addEventListener("click", () => {
+    if (_nav) _nav.closeTop();
+    else closeMenu();
+  });
+  if (backdrop) backdrop.addEventListener("click", () => {
+    if (_nav) _nav.closeTop();
+    else closeMenu();
+  });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isOpen) closeMenu();
+    if (e.key === "Escape" && isOpen) {
+      if (_nav) _nav.closeTop();
+      else closeMenu();
+    }
   });
   document.addEventListener("mobile-menu-refresh-chips", () => {
     if (!isOpen) return;

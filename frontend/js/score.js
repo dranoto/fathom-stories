@@ -17,7 +17,31 @@ export function computeEventScore(event, knobs) {
   }
   const imp = Math.max(0, Math.min(1, Number(event && event.importance_avg) || 0));
   const importanceFactor = floorW + (1 - floorW) * imp;
-  return m * freshness * importanceFactor;
+  const baseScore = m * freshness * importanceFactor;
+  return baseScore * computeNewnessBoost(event, knobs) * computeReadAllDemotion(event, knobs);
+}
+
+export function computeNewnessBoost(event, knobs) {
+  const boostHours = Number(knobs && knobs.newEventBoostHours);
+  const boostMax = Number(knobs && knobs.newEventBoostMax);
+  if (!Number.isFinite(boostHours) || boostHours <= 0) return 1.0;
+  if (!Number.isFinite(boostMax) || boostMax <= 1.0) return 1.0;
+  const created = event && event.created_at ? new Date(event.created_at) : null;
+  if (!created || isNaN(created.getTime())) return 1.0;
+  const ageHours = Math.max(0, (Date.now() - created.getTime()) / 3600000);
+  if (ageHours >= boostHours) return 1.0;
+  const proximity = 1 - ageHours / boostHours;
+  return 1 + (boostMax - 1) * proximity;
+}
+
+export function computeReadAllDemotion(event, knobs) {
+  const demotion = Number(knobs && knobs.readAllDemotion);
+  if (!Number.isFinite(demotion) || demotion >= 1.0) return 1.0;
+  const count = Number(event && event.article_count) || 0;
+  const unread = Number(event && event.unread_count);
+  if (count <= 0) return 1.0;
+  if (Number.isFinite(unread) && unread > 0) return 1.0;
+  return demotion;
 }
 
 export function sortEventsByScore(events, knobs) {

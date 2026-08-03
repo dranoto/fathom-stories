@@ -31,6 +31,12 @@ export async function listEvents({ status, minArticles, sort, knobs } = {}) {
       if (Number.isFinite(k.magnitudeCap)) params.set("score_cap", String(k.magnitudeCap));
     }
   }
+  const k2 = knobs || getScoreKnobs();
+  if (k2) {
+    if (Number.isFinite(k2.newEventBoostHours)) params.set("score_new_boost_hours", String(k2.newEventBoostHours));
+    if (Number.isFinite(k2.newEventBoostMax)) params.set("score_new_boost_max", String(k2.newEventBoostMax));
+    if (Number.isFinite(k2.readAllDemotion)) params.set("score_read_demotion", String(k2.readAllDemotion));
+  }
   const qs = params.toString();
   return handleFetch(`/api/events${qs ? "?" + qs : ""}`);
 }
