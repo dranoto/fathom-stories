@@ -23,6 +23,7 @@ let currentSummary = null;
 let currentEventId = null;
 let currentEvent = null;
 let chatAbortController = null;
+let _nav = null;
 
 function _closeDrawerOnMobile() {
   if (isDesktopLayout()) return;
@@ -31,7 +32,8 @@ function _closeDrawerOnMobile() {
   if (drawerEl) drawerEl.setAttribute("data-open", "0");
 }
 
-export function setupReader() {
+export function setupReader(nav) {
+  _nav = nav || null;
   const close = document.getElementById("btn-close-reader");
   const toggle = document.getElementById("btn-toggle-read");
   const picker = document.getElementById("reader-event-picker");
@@ -42,21 +44,24 @@ export function setupReader() {
   window.addEventListener("open-reader", async (e) => {
     _closeDrawerOnMobile();
     const id = e.detail.articleId;
-    await openArticle(id);
+    await openArticle(id, { fromHistory: !!(e.detail && e.detail.fromHistory) });
   });
 
   window.addEventListener("open-summary", async (e) => {
     _closeDrawerOnMobile();
     const id = e.detail.eventId;
-    await openSummary(id);
+    await openSummary(id, { fromHistory: !!(e.detail && e.detail.fromHistory) });
   });
 
   window.addEventListener("open-chat", async (e) => {
     const id = e.detail.eventId;
-    await openChat(id);
+    await openChat(id, { fromHistory: !!(e.detail && e.detail.fromHistory) });
   });
 
-  close.addEventListener("click", () => closeReader());
+  close.addEventListener("click", () => {
+    if (_nav) _nav.closeTop();
+    else closeReader();
+  });
   toggle.addEventListener("click", async () => {
     if (currentSummary && currentEventId) {
       await regenerateSummary();
@@ -129,7 +134,8 @@ function setupReaderSwipeDismiss(pane) {
       pane.style.transform = `translateY(${exitDir * 100}vh)`;
       pane.style.opacity = "0";
       setTimeout(() => {
-        closeReader();
+        if (_nav) _nav.closeTop();
+        else closeReader();
         requestAnimationFrame(() => {
           pane.classList.remove("swipe-dismissing");
           pane.style.transform = "";
@@ -150,7 +156,11 @@ function setupReaderSwipeDismiss(pane) {
   pane.addEventListener("touchcancel", endDrag, { passive: true });
 }
 
-async function openArticle(id) {
+async function openArticle(id, opts) {
+  const fromHistory = !!(opts && opts.fromHistory);
+  if (!fromHistory && _nav) {
+    _nav.push({ kind: "article", articleId: id });
+  }
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
   const body = document.getElementById("reader-body");
@@ -346,7 +356,11 @@ export function closeReader() {
   dispatchReaderClosed();
 }
 
-async function openSummary(eventId) {
+async function openSummary(eventId, opts) {
+  const fromHistory = !!(opts && opts.fromHistory);
+  if (!fromHistory && _nav) {
+    _nav.push({ kind: "summary", eventId });
+  }
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
   const body = document.getElementById("reader-body");
@@ -535,7 +549,11 @@ function scrollChatToBottom(container) {
   container.scrollTop = container.scrollHeight;
 }
 
-async function openChat(eventId) {
+async function openChat(eventId, opts) {
+  const fromHistory = !!(opts && opts.fromHistory);
+  if (!fromHistory && _nav) {
+    _nav.push({ kind: "chat", eventId });
+  }
   const main = document.querySelector(".app-main");
   const pane = document.getElementById("reader-pane");
   const body = document.getElementById("reader-body");
@@ -594,8 +612,12 @@ async function openChat(eventId) {
       chatAbortController.abort();
       chatAbortController = null;
     }
-    showReaderExtras();
-    openSummary(eventId);
+    if (_nav) {
+      _nav.closeTop();
+    } else {
+      showReaderExtras();
+      openSummary(eventId);
+    }
   });
 
   inputEl.addEventListener("keydown", (e) => {

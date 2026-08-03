@@ -8,16 +8,46 @@ import {
 } from "./js/state.js";
 import { renderEventTabs, setupEventTabs, buildNavOrder } from "./js/eventTabs.js";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
-import { setupReader } from "./js/reader.js";
+import { setupReader, closeReader } from "./js/reader.js";
 import { setupSearch } from "./js/search.js";
 import { loadTheme } from "./js/theme.js";
 import { loadFontSize } from "./js/fontSize.js";
 import { startCountdowns } from "./js/countdowns.js";
-import { setupMobileMenu, renderMobileMenu } from "./js/mobileMenu.js";
+import { setupMobileMenu, renderMobileMenu, openMenuFromHistory, closeMenuFromHistory } from "./js/mobileMenu.js";
 import { registerServiceWorker } from "./js/pwa.js";
 import { setupSwipeNav } from "./js/swipeNav.js";
 import { selectEventTab, selectInboxTab, toggleMinorDrawer } from "./js/tabActions.js";
 import { isDesktopLayout } from "./js/layout.js";
+import { setupReaderHistory } from "./js/readerHistory.js";
+
+function onReaderHistoryPop(top) {
+  if (!top) {
+    closeReader();
+    closeMenuFromHistory();
+    return;
+  }
+  if (top.kind === "menu") {
+    openMenuFromHistory();
+    return;
+  }
+  if (top.kind === "summary") {
+    window.dispatchEvent(new CustomEvent("open-summary", {
+      detail: { eventId: top.eventId, fromHistory: true },
+    }));
+    return;
+  }
+  if (top.kind === "article") {
+    window.dispatchEvent(new CustomEvent("open-reader", {
+      detail: { articleId: top.articleId, fromHistory: true },
+    }));
+    return;
+  }
+  if (top.kind === "chat") {
+    window.dispatchEvent(new CustomEvent("open-chat", {
+      detail: { eventId: top.eventId, fromHistory: true },
+    }));
+  }
+}
 
 async function refreshEvents() {
   let all = [];
@@ -141,10 +171,11 @@ async function handleSwipeNav(direction) {
 async function bootstrap() {
   loadTheme();
   loadFontSize();
-  setupReader();
+  const readerNav = setupReaderHistory(onReaderHistoryPop);
+  setupReader(readerNav);
   setupSearch();
   setupEventTabs();
-  setupMobileMenu(() => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
+  setupMobileMenu(readerNav, () => renderMobileMenu({ onRunAfterRefresh: afterTimerFiredRefresh }));
   registerServiceWorker();
 
   const main = document.querySelector(".app-main");
