@@ -174,12 +174,34 @@ scraper_assistant/        # bypass-paywalls extension (gitignored)
 4. **Graceful degradation** — LLM failures log error and return meaningful message.
 5. **Single user** — No auth, no `user_id` columns. Read state is per-browser via an anonymous `fathom_visitor_id` cookie (uuid4, HttpOnly, 1-year) so the site can be shared with friends without their reads colliding with yours.
 
+## Event Ranking & Per-Browser Knobs
+
+The event bar uses one of two sort modes, both per-browser-overridable via 6 sliders in the menu (Sort → Shaped):
+
+| Knob | Server default | Range | Effect |
+|---|---|---|---|
+| `Log base` | `SCORE_LOG_BASE=2.0` | 1.1–10 | Compresses/expands the magnitude curve (2 = doubling, 3 = tripling) |
+| `Freshness half-life (h)` | `SCORE_FRESHNESS_HALF_LIFE_HOURS=8` | 1–96 | Score halves every N hours of quiet |
+| `Importance floor` | `SCORE_IMPORTANCE_FLOOR=0.5` | 0–1 | Baseline importance floor (0 = pure importance, 1 = no importance effect) |
+| `Magnitude cap` | `SCORE_MAGNITUDE_CAP=6.0` | 1–20 | Caps log-based magnitude (lower = no mega-event dominance) |
+| `New event boost window (h)` | `SCORE_NEW_EVENT_BOOST_HOURS=6.0` | 0–48 | Newly-created events get a multiplier that decays linearly to 1× over this many hours. 0 = off |
+| `New event boost multiplier` | `SCORE_NEW_EVENT_BOOST_MAX=5.0` | 1–10 | Multiplier at creation; 1.0 = no effect |
+| `Read-all demotion` | `SCORE_READ_ALL_DEMOTION=0.3` | 0–1 | Multiplier on score when `article_count > 0 AND unread_count == 0`. 1.0 = no effect. 0 = fully-read events drop to score 0 (cycle past). New articles on a fully-read event restore normal ranking automatically. |
+
+**Default sort mode is `normal`** (primary = `article_count` desc, tie = `last_article_at` desc).
+**Shaped sort** uses `log(count)/log(base) × freshness × importance`, also capped.
+
+**The new-event boost applies in both modes.** In score mode, the multiplier is folded into `score_value`. In normal mode, it's added to the primary key as `(boost - 1) × 1000` so a brand-new 2-article event can overtake a mature 388-article event for the first few hours after creation. **The read-all demotion applies in both modes** as a multiplier on the final score when `article_count > 0 AND unread_count == 0`. All knobs are persisted in `localStorage` under `fathom.scoreKnobs` and forwarded as query params to `/api/events`.
+
 ## Grouping Flow
 
 **Live assigner** runs after each fetch:
-- Pulls ungrouped articles (`event_id IS NULL`)
+- Pulls ungrouped articles (`event_id IS NULL` AND `published_date >= now() - LIVE_GROUP_WINDOW_HOURS`, default 24h)
+- Caps at `LIVE_GROUP_MAX_ARTICLES` (default 100) and batches at `LIVE_GROUP_BATCH_SIZE` (default 20) per LLM call to stay under provider context windows
+- Articles older than `LIVE_GROUP_WINDOW_HOURS` are intentionally left untouched in the DB (existing 30-day cleanup handles them); they are not deleted
 - Sends: list of articles + active events + 5 most recent `GroupingFeedback` rows
 - LLM returns per-article decision: existing | uncategorized + importance_score
+- On a per-batch `OpenAIContextOverflowError` (or `context_length_exceeded` in the error message), retries that batch once with `snippet_chars=200` instead of 500
 - Apply decisions in a single transaction (live pass never creates events)
 
 **Hourly regrouper** runs as `regroup_uncategorized`:
