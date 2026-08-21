@@ -349,6 +349,22 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
     return counts
 
 
+async def _agenerate_with_retry(llm: ChatOpenAI, messages: List[HumanMessage]) -> Any:
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, 3):
+        try:
+            return await llm.agenerate(messages)
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                logger.warning(
+                    f"GROUPING: agenerate attempt {attempt}/2 failed: "
+                    f"{type(e).__name__}: {e}; retrying once"
+                )
+    assert last_err is not None
+    raise last_err
+
+
 def _is_context_overflow(exc: BaseException) -> bool:
     name = type(exc).__name__
     if name in ("OpenAIContextOverflowError", "ContextOverflowError"):
@@ -377,7 +393,7 @@ async def _assign_chunk(
     content: Optional[str] = None
     for attempt, snippet_chars in enumerate((500, 200), start=1):
         try:
-            response = await llm.agenerate([[HumanMessage(content=prompt)]])
+            response = await _agenerate_with_retry(llm, [[HumanMessage(content=prompt)]])
             content = response.generations[0][0].text
             break
         except Exception as e:
@@ -442,7 +458,7 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
         )
         try:
             response = await asyncio.wait_for(
-                llm.agenerate([[HumanMessage(content=prompt)]]),
+                _agenerate_with_retry(llm, [[HumanMessage(content=prompt)]]),
                 timeout=GROUPING_GUARD_TIMEOUT,
             )
             content = response.generations[0][0].text
