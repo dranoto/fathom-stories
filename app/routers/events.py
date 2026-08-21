@@ -34,18 +34,14 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 
 async def _regen_summary_after_move(event_id: int, article_id: int, llm) -> None:
     try:
-        from ..grouping.summary_service import generate_incremental_summary_for_event
-        await generate_incremental_summary_for_event(event_id, [article_id], llm)
+        from ..grouping.summary_service import generate_summary_update
+        await generate_summary_update(event_id, [article_id], llm)
     except Exception as e:
         logger.error(f"Background summary regen after move failed for event {event_id}: {e}", exc_info=True)
 
 
 async def _regen_summary_after_remove(event_id: int, llm) -> None:
-    try:
-        from ..grouping.summary_service import regenerate_summary_for_event
-        await regenerate_summary_for_event(event_id, llm)
-    except Exception as e:
-        logger.error(f"Background summary regen after remove failed for event {event_id}: {e}", exc_info=True)
+    logger.info(f"Article removed from event {event_id}; awaiting manual Regenerate click")
 
 
 @router.get("", response_model=List[EventResponse])
@@ -509,11 +505,7 @@ async def remove_article_from_event(
         raise HTTPException(status_code=500, detail="Failed to remove article")
 
     if not disbanded:
-        try:
-            llm = get_llm_summary(request)
-            background_tasks.add_task(_regen_summary_after_remove, event_id, llm)
-        except HTTPException:
-            pass
+        logger.info(f"Article {article_id} removed from event {event_id}; awaiting manual Regenerate click")
 
     return {
         "message": "Article removed" + (" and event disbanded" if disbanded else ""),
@@ -535,8 +527,8 @@ async def generate_event_summary(
         llm = get_llm_summary(request)
     except HTTPException:
         raise
-    from ..grouping.summary_service import generate_initial_summary_for_event
-    ok = await generate_initial_summary_for_event(event_id, llm)
+    from ..grouping.summary_service import generate_initial_summary
+    ok = await generate_initial_summary(event_id, llm)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to generate summary")
     return await get_event_summary(event_id, db)

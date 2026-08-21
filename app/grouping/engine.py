@@ -1,4 +1,5 @@
 # app/grouping/engine.py
+import asyncio
 import json
 import logging
 from collections import defaultdict
@@ -18,6 +19,10 @@ from .content_classifier import classify_title
 from .lifecycle import reset_expiry, reset_expiry_on_event
 
 logger = logging.getLogger(__name__)
+
+
+SUMMARY_GUARD_TIMEOUT = app_config.SUMMARY_REQUEST_TIMEOUT + 30
+GROUPING_GUARD_TIMEOUT = app_config.GROUPING_REQUEST_TIMEOUT + 30
 
 
 def _normalize_event_name(name: str) -> str:
@@ -296,15 +301,23 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
     event_increments: Dict[int, List[int]] = defaultdict(list)
 
     for idx, chunk in enumerate(_chunked(articles, batch_size), start=1):
-        chunk_increments = await _assign_chunk(
-            llm=llm,
-            chunk=chunk,
-            idx=idx,
-            n_batches=n_batches,
-            active_payload=active_payload,
-            cooling_payload=cooling_payload,
-            few_shot_block=few_shot_block,
-        )
+        try:
+            chunk_increments = await asyncio.wait_for(
+                _assign_chunk(
+                    llm=llm,
+                    chunk=chunk,
+                    idx=idx,
+                    n_batches=n_batches,
+                    active_payload=active_payload,
+                    cooling_payload=cooling_payload,
+                    few_shot_block=few_shot_block,
+                ),
+                timeout=GROUPING_GUARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"GROUPING: batch {idx}/{n_batches} timed out after {GROUPING_GUARD_TIMEOUT}s; marking chunk as errors")
+            counts["errors"] += len(chunk)
+            continue
         if chunk_increments is None:
             counts["errors"] += len(chunk)
             continue
@@ -321,12 +334,17 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
         for ev_id, ids in applied_increments.items():
             event_increments[ev_id].extend(ids)
 
-    from .summary_service import generate_incremental_summary_for_event
+    from .summary_service import generate_summary_update
     for event_id, new_ids in event_increments.items():
         try:
-            await generate_incremental_summary_for_event(event_id, new_ids, llm)
+            await asyncio.wait_for(
+                generate_summary_update(event_id, new_ids, llm),
+                timeout=SUMMARY_GUARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
         except Exception as e:
-            logger.error(f"Auto-incremental summary failed for event {event_id}: {e}", exc_info=True)
+            logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
     return counts
 
@@ -423,8 +441,16 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
             few_shot_block=few_shot_block,
         )
         try:
-            response = await llm.agenerate([[HumanMessage(content=prompt)]])
+            response = await asyncio.wait_for(
+                llm.agenerate([[HumanMessage(content=prompt)]]),
+                timeout=GROUPING_GUARD_TIMEOUT,
+            )
             content = response.generations[0][0].text
+        except asyncio.TimeoutError:
+            logger.error(f"REGROUP: batch {idx}/{n_batches} timed out after {GROUPING_GUARD_TIMEOUT}s; marking chunk as errors")
+            total_counts["batches_failed"] += 1
+            total_counts["errors"] += len(chunk)
+            continue
         except Exception as e:
             logger.error(f"REGROUP: batch {idx}/{n_batches} LLM call failed: {e}")
             total_counts["batches_failed"] += 1
@@ -450,22 +476,32 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
             event_increments[ev_id].extend(new_ids)
 
     from .summary_service import (
-        generate_initial_summary_for_event,
-        generate_incremental_summary_for_event,
+        generate_initial_summary,
+        generate_summary_update,
     )
     new_event_ids_set = set(all_new_event_ids)
     for new_event_id in all_new_event_ids:
         try:
-            await generate_initial_summary_for_event(new_event_id, llm)
+            await asyncio.wait_for(
+                generate_initial_summary(new_event_id, llm),
+                timeout=SUMMARY_GUARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Auto-initial summary timed out for event {new_event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
         except Exception as e:
             logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
     for event_id, new_ids in event_increments.items():
         if event_id in new_event_ids_set:
             continue
         try:
-            await generate_incremental_summary_for_event(event_id, new_ids, llm)
+            await asyncio.wait_for(
+                generate_summary_update(event_id, new_ids, llm),
+                timeout=SUMMARY_GUARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
         except Exception as e:
-            logger.error(f"Auto-incremental summary failed for event {event_id}: {e}", exc_info=True)
+            logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
     dedup_counts: Dict[str, int] = {}
     try:
