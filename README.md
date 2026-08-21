@@ -53,9 +53,9 @@ All knobs live in `.env`. Restart the container (`docker compose restart app`) a
 |---|---|---|
 | `OPENAI_API_KEY` | (required) | LLM provider key |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint |
-| `DEFAULT_SUMMARY_MODEL_NAME` | `xiaomi/mimo-v2.5-pro` | Per-event summary model |
-| `DEFAULT_GROUPING_MODEL_NAME` | `xiaomi/mimo-v2.5-pro` | Live grouping + recluster model |
-| `DEFAULT_CHAT_MODEL_NAME` | `xiaomi/mimo-v2.5-pro` | Per-event chat model |
+| `DEFAULT_SUMMARY_MODEL_NAME` | `FreeOnly` | Per-event summary model |
+| `DEFAULT_GROUPING_MODEL_NAME` | `FreeOnly` | Live grouping + recluster model |
+| `DEFAULT_CHAT_MODEL_NAME` | `FreeOnly` | Per-event chat model |
 | `RSS_FEED_URLS` | (none) | Comma-separated feed URLs or JSON list |
 | `DEFAULT_RSS_FETCH_INTERVAL_MINUTES` | `30` | Fetch cadence |
 | `LIVE_GROUP_WINDOW_HOURS` | `24` | Live pass only considers ungrouped articles published within this window |

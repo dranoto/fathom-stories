@@ -393,6 +393,7 @@ async function openSummary(eventId, opts) {
 
   const summary = event.latest_summary;
   currentSummary = summary;
+  window.__currentEventArticles = event.articles || [];
   source.textContent = `${event.name} · Event Summary`;
   orig.href = "#";
   orig.style.display = "none";
@@ -447,6 +448,11 @@ async function openSummary(eventId, opts) {
 
 async function regenerateSummary() {
   if (!currentEventId) return;
+  const articleCount = (window.__currentEventArticles || []).length;
+  const msg = articleCount > 0
+    ? `Regenerate this event's summary from scratch? It has ${articleCount} article(s) — this will send a large amount of text to the LLM and may take a minute or more. Continue?`
+    : `Regenerate this event's summary from scratch? The current summary will be replaced. Continue?`;
+  if (!confirm(msg)) return;
   const toggle = document.getElementById("btn-toggle-read");
   const orig = toggle.textContent;
   toggle.disabled = true;
