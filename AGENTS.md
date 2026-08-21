@@ -30,65 +30,41 @@ python -m app.cli serve
 # Reader UI: http://localhost:8000
 ```
 
-## Running as a systemd service (recommended for the dev box)
+## Running as a Docker container via Arcane (canonical deployment)
 
-The app runs under a **user-level systemd unit** (no sudo required) so it auto-restarts on crash and starts on login. Unit file:
+The app runs as a Docker container (`fathom-stories:local`) managed by **Arcane**, the project's container orchestrator. The container is built from this repo's `Dockerfile` and `docker-compose.yml`, and is recreated by Arcane whenever the image is rebuilt.
 
-`~/.config/systemd/user/fathom-stories.service`
-
-```ini
-[Unit]
-Description=Fathom Stories (FastAPI reader + scheduler)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/home/thankfulcarp/fathom-stories
-EnvironmentFile=/home/thankfulcarp/fathom-stories/.env
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m app.cli serve
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/home/thankfulcarp/fathom-stories/logs/server.log
-StandardError=append:/home/thankfulcarp/fathom-stories/logs/server.log
-
-[Install]
-WantedBy=default.target
-```
-
-**Common commands** (all use `systemctl --user` since the unit lives in the user manager):
+**Build the image** (from the repo root):
 
 ```bash
-# Status / logs
-systemctl --user status fathom-stories.service
-journalctl --user -u fathom-stories.service -f
-tail -f /home/thankfulcarp/fathom-stories/logs/server.log
-
-# Restart (e.g. after pulling new code or editing .env / prompts)
-systemctl --user restart fathom-stories.service
-
-# Stop / start
-systemctl --user stop fathom-stories.service
-systemctl --user start fathom-stories.service
-
-# After editing the unit file itself
-systemctl --user daemon-reload
-systemctl --user restart fathom-stories.service
-
-# Enable at boot (already enabled, but for reference)
-systemctl --user enable fathom-stories.service
+docker build -t fathom-stories:local .
 ```
 
-**To survive logout** (optional — only needed if you want it running when no user session is open):
+**Recreate the container** through Arcane — it will detect the new image and swap the running container. (Arcane invokes the equivalent of `docker compose up -d` against the project's `docker-compose.yml`.)
+
+**Status / logs**:
+
 ```bash
-sudo loginctl enable-linger thankfulcarp
+docker ps --filter name=fathom-stories
+docker logs --tail 50 -f fathom-stories
 ```
 
-**If you want to run ad-hoc instead** (kills the systemd-managed process when you exit):
+**Bind mounts** (from `docker-compose.yml`):
+
+- `./data` → `/app/data` — SQLite database persists across rebuilds.
+- `./logs` → `/app/logs` — log files persist across rebuilds.
+
+The application code and frontend are **baked into the image** at build time, so a rebuild is required after every code change. The `.env` file is read from the repo root via `env_file:`; restart the container after editing it.
+
+## Legacy: systemd user unit
+
+`~/.config/systemd/user/fathom-stories.service` is preserved for reference but **disabled**. The Docker container is the canonical deployment.
+
+To re-enable the systemd unit (e.g. for ad-hoc development without Docker):
+
 ```bash
-pkill -f "app.cli serve"   # stop the systemd unit first
-python -m app.cli serve    # run in foreground
+systemctl --user enable --now fathom-stories.service
+docker compose down   # or stop the container via Arcane
 ```
 
 ## CLI Reference
