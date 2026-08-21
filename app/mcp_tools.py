@@ -17,7 +17,7 @@ async def init_mcp_tools(app: FastAPI) -> None:
 
     servers = app_config.CHAT_MCP_SERVERS
     if not servers:
-        logger.info("MCP_TOOLS: no CHAT_MCP_SERVERS configured; chat tools disabled.")
+        logger.info("MCP_TOOLS: CHAT_MCP_SERVERS is empty; chat tools disabled.")
         return
 
     try:
@@ -47,7 +47,7 @@ async def init_mcp_tools(app: FastAPI) -> None:
 
     try:
         tools = await client.get_tools()
-    except Exception as e:
+    except BaseException as e:
         logger.error(f"MCP_TOOLS: get_tools failed: {e}", exc_info=True)
         return
 

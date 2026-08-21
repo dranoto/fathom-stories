@@ -71,7 +71,16 @@ async def lifespan(app: FastAPI):
     database.create_db_and_tables()
     tasks.seed_feeds_from_env()
     _init_llms(app)
-    await mcp_tools.init_mcp_tools(app)
+    try:
+        await mcp_tools.init_mcp_tools(app)
+    except BaseException as e:
+        logger.warning(f"MAIN_API: chat tool init failed, continuing without tools: {e}")
+
+    chat_tool_names = [getattr(t, "name", "?") for t in mcp_tools.get_chat_tools(app)]
+    if chat_tool_names:
+        logger.info(f"MAIN_API: chat tools ready: {chat_tool_names}")
+    else:
+        logger.info("MAIN_API: no chat tools available (CHAT_MCP_SERVERS empty or init failed); chat will answer from prompt only")
 
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     app.state.scheduler = scheduler
