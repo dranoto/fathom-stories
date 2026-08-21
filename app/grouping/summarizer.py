@@ -69,6 +69,25 @@ async def _stream_full_text(llm: ChatOpenAI, prompt: str) -> str:
     return "".join(parts)
 
 
+async def _stream_full_text_with_retry(llm: ChatOpenAI, prompt: str) -> str:
+    try:
+        return await _stream_full_text(llm, prompt)
+    except Exception as first_err:
+        logger.warning(
+            f"Summary LLM stream failed (attempt 1/2): {type(first_err).__name__}: {first_err}; retrying once"
+        )
+        try:
+            content = await _stream_full_text(llm, prompt)
+            logger.info("Summary LLM stream retry succeeded")
+            return content
+        except Exception as retry_err:
+            logger.error(
+                f"Summary LLM stream failed (attempt 2/2): {type(retry_err).__name__}: {retry_err}; giving up",
+                exc_info=True,
+            )
+            raise retry_err from first_err
+
+
 async def generate_major_summary(
     event_name: str,
     articles: List[Dict[str, Any]],
@@ -100,8 +119,16 @@ async def generate_major_summary(
     article_texts = "\n".join(parts)
     prompt = build_major_summary_prompt(event_name, article_texts, prompt_template, prior_summary_json)
     try:
-        content = await _stream_full_text(llm, prompt)
-        summary_data = parse_major_summary_response(content)
+        content = await _stream_full_text_with_retry(llm, prompt)
+        try:
+            summary_data = parse_major_summary_response(content)
+        except ValueError as parse_err:
+            logger.warning(
+                f"Major summary JSON parse failed for '{event_name}' (attempt 1/2): {parse_err}; retrying once"
+            )
+            content = await _stream_full_text_with_retry(llm, prompt)
+            summary_data = parse_major_summary_response(content)
+            logger.info(f"Major summary JSON retry succeeded for '{event_name}'")
         if prior_summary_json and "progressive_summary" in summary_data:
             summary_data["progressive_summary"] = f"(Updates based on new articles) {summary_data['progressive_summary']}"
         return summary_data
@@ -155,8 +182,16 @@ async def generate_incremental_summary(
         prior_summary_json=prior_escaped,
     )
     try:
-        content = await _stream_full_text(llm, prompt)
-        summary_data = parse_major_summary_response(content)
+        content = await _stream_full_text_with_retry(llm, prompt)
+        try:
+            summary_data = parse_major_summary_response(content)
+        except ValueError as parse_err:
+            logger.warning(
+                f"Incremental summary JSON parse failed for '{event_name}' (attempt 1/2): {parse_err}; retrying once"
+            )
+            content = await _stream_full_text_with_retry(llm, prompt)
+            summary_data = parse_major_summary_response(content)
+            logger.info(f"Incremental summary JSON retry succeeded for '{event_name}'")
         return summary_data
     except (ValueError, json.JSONDecodeError) as e:
         logger.error(f"Error generating incremental summary for '{event_name}': {e}", exc_info=True)
