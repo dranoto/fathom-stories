@@ -24,6 +24,14 @@ def now_dt():
     return datetime.now(timezone.utc)
 
 
+def _ensure_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 async def _parse_feed_in_thread(feed_url: str):
     loop = asyncio.get_event_loop()
     try:
@@ -153,7 +161,8 @@ async def fetch_and_store_articles_from_feed(db: Session, feed_source: FeedSourc
         )
         if recent_failure:
             retry_cutoff = now_dt() - timedelta(days=app_config.SCRAPE_FAILURE_RETRY_DAYS)
-            if recent_failure.last_attempted_at and recent_failure.last_attempted_at > retry_cutoff:
+            last_attempt = _ensure_aware(recent_failure.last_attempted_at)
+            if last_attempt and last_attempt > retry_cutoff:
                 logger.debug(
                     f"RSS_CLIENT: skipping {article_url} — scrape failed "
                     f"{recent_failure.attempt_count}x, last at {recent_failure.last_attempted_at}"
@@ -369,8 +378,8 @@ async def update_all_subscribed_feeds(db: Session):
             last_fetched_aware = feed.last_fetched_at
             if last_fetched_aware.tzinfo is None or last_fetched_aware.tzinfo.utcoffset(last_fetched_aware) is None:
                 logger.warning(f"RSS_CLIENT_SCHEDULER: Warning - Feed '{feed.name}' (ID: {feed.id}) has an offset-naive last_fetched_at ('{last_fetched_aware}'). Assuming UTC.")
-                last_fetched_aware = last_fetched_aware.replace(tzinfo=timezone.utc)
-            
+                last_fetched_aware = _ensure_aware(last_fetched_aware)
+
             fetch_time_cutoff = now_aware - timedelta(minutes=feed.fetch_interval_minutes)
             if last_fetched_aware < fetch_time_cutoff:
                 should_fetch = True
