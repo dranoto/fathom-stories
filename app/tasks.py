@@ -34,6 +34,7 @@ def _get_grouping_llm():
         model_name=app_config.DEFAULT_GROUPING_MODEL_NAME,
         temperature=app_config.GROUPING_LLM_TEMPERATURE,
         max_tokens=app_config.GROUPING_MAX_OUTPUT_TOKENS,
+        request_timeout=app_config.GROUPING_REQUEST_TIMEOUT,
     )
 
 

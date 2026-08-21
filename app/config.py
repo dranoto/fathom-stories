@@ -16,13 +16,37 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///./{SQLITE_DB_SUBDIR}/{SQLIT
 # --- LLM Configuration ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-DEFAULT_SUMMARY_MODEL_NAME = os.getenv("DEFAULT_SUMMARY_MODEL_NAME", "xiaomi/mimo-v2.5-pro")
-DEFAULT_GROUPING_MODEL_NAME = os.getenv("DEFAULT_GROUPING_MODEL_NAME", "xiaomi/mimo-v2.5-pro")
-DEFAULT_CHAT_MODEL_NAME = os.getenv("DEFAULT_CHAT_MODEL_NAME", "xiaomi/mimo-v2.5-pro")
+DEFAULT_SUMMARY_MODEL_NAME = os.getenv("DEFAULT_SUMMARY_MODEL_NAME", "FreeOnly")
+DEFAULT_GROUPING_MODEL_NAME = os.getenv("DEFAULT_GROUPING_MODEL_NAME", "FreeOnly")
+DEFAULT_CHAT_MODEL_NAME = os.getenv("DEFAULT_CHAT_MODEL_NAME", "FreeOnly")
 
-SUMMARY_MAX_OUTPUT_TOKENS = int(os.getenv("SUMMARY_MAX_OUTPUT_TOKENS", 128000))
+SUMMARY_MAX_OUTPUT_TOKENS = int(os.getenv("SUMMARY_MAX_OUTPUT_TOKENS", 4096))
 GROUPING_MAX_OUTPUT_TOKENS = int(os.getenv("GROUPING_MAX_OUTPUT_TOKENS", 128000))
 CHAT_MAX_OUTPUT_TOKENS = int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", 8192))
+
+try:
+    SUMMARY_REQUEST_TIMEOUT = float(os.getenv("SUMMARY_REQUEST_TIMEOUT", "180"))
+except ValueError:
+    logger.warning("Invalid SUMMARY_REQUEST_TIMEOUT in .env. Using default 180.")
+    SUMMARY_REQUEST_TIMEOUT = 180.0
+
+try:
+    GROUPING_REQUEST_TIMEOUT = float(os.getenv("GROUPING_REQUEST_TIMEOUT", "180"))
+except ValueError:
+    logger.warning("Invalid GROUPING_REQUEST_TIMEOUT in .env. Using default 180.")
+    GROUPING_REQUEST_TIMEOUT = 180.0
+
+try:
+    CHAT_REQUEST_TIMEOUT = float(os.getenv("CHAT_REQUEST_TIMEOUT", "180"))
+except ValueError:
+    logger.warning("Invalid CHAT_REQUEST_TIMEOUT in .env. Using default 180.")
+    CHAT_REQUEST_TIMEOUT = 180.0
+
+try:
+    SUMMARY_MAX_PROMPT_TOKENS = int(os.getenv("SUMMARY_MAX_PROMPT_TOKENS", "100000"))
+except ValueError:
+    logger.warning("Invalid SUMMARY_MAX_PROMPT_TOKENS in .env. Using default 100000.")
+    SUMMARY_MAX_PROMPT_TOKENS = 100000
 
 # --- RSS Feed Configuration ---
 rss_feeds_env_str = os.getenv("RSS_FEED_URLS", "")

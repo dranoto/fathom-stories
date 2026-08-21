@@ -33,6 +33,7 @@ def _get_grouping_llm():
         model_name=app_config.DEFAULT_GROUPING_MODEL_NAME,
         temperature=app_config.GROUPING_LLM_TEMPERATURE,
         max_tokens=app_config.GROUPING_MAX_OUTPUT_TOKENS,
+        request_timeout=app_config.GROUPING_REQUEST_TIMEOUT,
     )
     if not llm:
         logger.error("Failed to initialize grouping LLM")
@@ -304,14 +305,8 @@ def cmd_lifecycle(_args):
 
 def cmd_summarize(args):
     create_db_and_tables()
-    from .database.models import Event
-    from .database.models import EventSummary, Article
-    from .grouping.summarizer import generate_major_summary
     from .summarizer import initialize_llm
-    from datetime import datetime, timezone
-    from sqlalchemy import desc
-    from .dependencies import get_llm_summary
-    from fastapi import Request
+    from .grouping.summary_service import generate_initial_summary
 
     if not app_config.OPENAI_API_KEY:
         print("OPENAI_API_KEY not set")
@@ -322,64 +317,17 @@ def cmd_summarize(args):
         model_name=app_config.DEFAULT_SUMMARY_MODEL_NAME,
         temperature=app_config.SUMMARY_LLM_TEMPERATURE,
         max_tokens=app_config.SUMMARY_MAX_OUTPUT_TOKENS,
+        request_timeout=app_config.SUMMARY_REQUEST_TIMEOUT,
     )
-    with db_session_scope() as db:
-        event = db.query(Event).filter(Event.id == args.event_id).first()
-        if not event:
-            print(f"Event {args.event_id} not found")
-            sys.exit(1)
-        articles = (
-            db.query(Article)
-            .filter(Article.event_id == args.event_id)
-            .order_by(desc(Article.published_date))
-            .all()
-        )
-        articles_data = [
-            {
-                "id": a.id, "title": a.title, "publisher_name": a.publisher_name,
-                "published_date": a.published_date.isoformat() if a.published_date else None,
-                "url": a.url, "word_count": a.word_count,
-                "scraped_text_content": a.scraped_text_content, "rss_description": a.rss_description,
-            }
-            for a in articles
-        ]
-        prior = (
-            db.query(EventSummary)
-            .filter(EventSummary.event_id == args.event_id)
-            .order_by(desc(EventSummary.generated_at))
-            .first()
-        )
-        prior_json = prior.summary_json if prior else None
-        event_name = event.name
-        eid = event.id
 
     async def runner():
-        return await generate_major_summary(
-            event_name=event_name,
-            articles=articles_data,
-            prompt_template=app_config.DEFAULT_MAJOR_SUMMARY_PROMPT,
-            prior_summary_json=prior_json,
-            llm=llm,
-        )
+        return await generate_initial_summary(args.event_id, llm)
 
-    summary_data = asyncio.run(runner())
-    with db_session_scope() as db:
-        article_ids = [a["id"] for a in articles_data]
-        summary_data["article_ids"] = article_ids
-        es = EventSummary(
-            event_id=eid,
-            summary_json=summary_data,
-            article_ids=article_ids,
-            article_count=len(articles_data),
-            model_used=app_config.DEFAULT_SUMMARY_MODEL_NAME,
-        )
-        db.add(es)
-        ev = db.query(Event).filter(Event.id == eid).first()
-        if ev:
-            ev.last_summary_at = datetime.now(timezone.utc)
-            ev.summary_article_count = len(articles_data)
-            ev.summary_version = (ev.summary_version or 0) + 1
-    print(f"Summary generated for event {eid}: {summary_data.get('progressive_summary', '')[:200]}...")
+    ok = asyncio.run(runner())
+    if not ok:
+        print(f"Failed to generate summary for event {args.event_id}")
+        sys.exit(1)
+    print(f"Summary generated for event {args.event_id}")
 
 
 def cmd_stats(_args):

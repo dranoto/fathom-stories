@@ -52,6 +52,23 @@ def parse_major_summary_response(response_content: str) -> Dict[str, Any]:
         raise ValueError(f"Failed to parse summary response as JSON: {e}")
 
 
+async def _stream_full_text(llm: ChatOpenAI, prompt: str) -> str:
+    parts: List[str] = []
+    try:
+        async for chunk in llm.astream([HumanMessage(content=prompt)]):
+            content = getattr(chunk, "content", None)
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        parts.append(block.get("text", ""))
+    except Exception as e:
+        logger.error(f"Summary LLM stream failed: {e}", exc_info=True)
+        raise
+    return "".join(parts)
+
+
 async def generate_major_summary(
     event_name: str,
     articles: List[Dict[str, Any]],
@@ -83,8 +100,7 @@ async def generate_major_summary(
     article_texts = "\n".join(parts)
     prompt = build_major_summary_prompt(event_name, article_texts, prompt_template, prior_summary_json)
     try:
-        response = await llm.agenerate([[HumanMessage(content=prompt)]])
-        content = response.generations[0][0].text
+        content = await _stream_full_text(llm, prompt)
         summary_data = parse_major_summary_response(content)
         if prior_summary_json and "progressive_summary" in summary_data:
             summary_data["progressive_summary"] = f"(Updates based on new articles) {summary_data['progressive_summary']}"
@@ -139,8 +155,7 @@ async def generate_incremental_summary(
         prior_summary_json=prior_escaped,
     )
     try:
-        response = await llm.agenerate([[HumanMessage(content=prompt)]])
-        content = response.generations[0][0].text
+        content = await _stream_full_text(llm, prompt)
         summary_data = parse_major_summary_response(content)
         return summary_data
     except (ValueError, json.JSONDecodeError) as e:

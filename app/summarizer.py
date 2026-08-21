@@ -14,6 +14,7 @@ def initialize_llm(
     model_name: str,
     temperature: float = 0.3,
     max_tokens: int = 1024,
+    request_timeout: float = 180.0,
 ) -> Optional[ChatOpenAI]:
     """
     Initializes a ChatOpenAI LLM instance for OpenAI-compatible endpoints.
@@ -26,8 +27,12 @@ def initialize_llm(
             openai_api_base=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
+            request_timeout=request_timeout,
         )
-        logger.info(f"Initialized LLM: {model_name} at {base_url} (max_tokens={max_tokens})")
+        logger.info(
+            f"Initialized LLM: {model_name} at {base_url} "
+            f"(max_tokens={max_tokens}, request_timeout={request_timeout}s)"
+        )
         return llm
     except Exception as e:
         logger.error(f"Error initializing LLM {model_name}: {e}", exc_info=True)
