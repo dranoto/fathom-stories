@@ -54,6 +54,7 @@ def parse_major_summary_response(response_content: str) -> Dict[str, Any]:
 
 async def _stream_full_text(llm: ChatOpenAI, prompt: str) -> str:
     parts: List[str] = []
+    finish_reason: Optional[str] = None
     try:
         async for chunk in llm.astream([HumanMessage(content=prompt)]):
             content = getattr(chunk, "content", None)
@@ -63,29 +64,41 @@ async def _stream_full_text(llm: ChatOpenAI, prompt: str) -> str:
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
                         parts.append(block.get("text", ""))
+            metadata = getattr(chunk, "response_metadata", None)
+            if isinstance(metadata, dict):
+                fr = metadata.get("finish_reason")
+                if fr:
+                    finish_reason = fr
     except Exception as e:
         logger.error(f"Summary LLM stream failed: {e}", exc_info=True)
         raise
+    if finish_reason:
+        logger.debug(
+            f"Summary stream finish_reason={finish_reason}, total_chars={sum(len(p) for p in parts)}"
+        )
     return "".join(parts)
 
 
-async def _stream_full_text_with_retry(llm: ChatOpenAI, prompt: str) -> str:
-    try:
-        return await _stream_full_text(llm, prompt)
-    except Exception as first_err:
-        logger.warning(
-            f"Summary LLM stream failed (attempt 1/2): {type(first_err).__name__}: {first_err}; retrying once"
-        )
+async def _stream_full_text_with_retry(llm: ChatOpenAI, prompt: str, *, min_chars: int = 1500) -> str:
+    last_content: str = ""
+    for attempt in range(1, 3):
         try:
-            content = await _stream_full_text(llm, prompt)
-            logger.info("Summary LLM stream retry succeeded")
-            return content
-        except Exception as retry_err:
-            logger.error(
-                f"Summary LLM stream failed (attempt 2/2): {type(retry_err).__name__}: {retry_err}; giving up",
-                exc_info=True,
+            last_content = await _stream_full_text(llm, prompt)
+        except Exception as first_err:
+            logger.warning(
+                f"Summary LLM stream failed (attempt {attempt}/2): "
+                f"{type(first_err).__name__}: {first_err}; retrying once"
             )
-            raise retry_err from first_err
+            if attempt == 2:
+                raise
+            continue
+        if len(last_content) >= min_chars or attempt == 2:
+            return last_content
+        logger.warning(
+            f"Summary LLM stream returned suspiciously short response "
+            f"({len(last_content)} chars < {min_chars}); retrying once"
+        )
+    return last_content
 
 
 async def generate_major_summary(
