@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from sqlalchemy import create_engine, inspect
 
-from app.database.models import Base
+from app.database.models import ArticleRead, Base
 
 
 class DatabaseSchemaTests(unittest.TestCase):
@@ -21,6 +21,37 @@ class DatabaseSchemaTests(unittest.TestCase):
 
         self.assertIn("ix_articles_event_published", article_indexes)
         self.assertIn("ix_article_reads_visitor_article", read_indexes)
+
+    def test_existing_database_receives_missing_indexes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "existing.db"
+            url = f"sqlite:///{db_path}"
+            engine = create_engine(url)
+            read_index = next(
+                index
+                for index in ArticleRead.__table__.indexes
+                if index.name == "ix_article_reads_visitor_article"
+            )
+            ArticleRead.__table__.indexes.remove(read_index)
+            try:
+                Base.metadata.create_all(engine)
+                self.assertNotIn(
+                    read_index.name,
+                    {index["name"] for index in inspect(engine).get_indexes("article_reads")},
+                )
+                ArticleRead.__table__.indexes.add(read_index)
+                with patch("app.database.engine", engine), patch(
+                    "app.database.app_config.DATABASE_URL", url
+                ):
+                    from app.database import create_db_and_tables
+                    create_db_and_tables()
+                self.assertIn(
+                    read_index.name,
+                    {index["name"] for index in inspect(engine).get_indexes("article_reads")},
+                )
+            finally:
+                ArticleRead.__table__.indexes.add(read_index)
+                engine.dispose()
 
     def test_create_db_and_tables_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmpdir:

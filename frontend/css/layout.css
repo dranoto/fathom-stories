@@ -422,6 +422,19 @@ body {
 }
 
 @media (max-width: 640px) {
+  .event-tabs .new-strip {
+    gap: 3px;
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+  }
+  .event-tabs .new-strip-header { padding: 0; }
+  .event-tabs .new-strip-label,
+  .event-tabs .new-strip-count { font-size: 9px; }
+  .event-tabs .new-strip-row {
+    gap: 6px;
+    scrollbar-width: none;
+  }
+  .event-tabs .new-strip-row::-webkit-scrollbar { display: none; }
   .event-tab {
     width: 180px;
     flex: 0 0 180px;

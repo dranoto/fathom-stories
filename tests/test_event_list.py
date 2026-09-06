@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -32,8 +32,16 @@ class EventListTests(unittest.TestCase):
         app.dependency_overrides[database.get_db] = get_test_db
         app.dependency_overrides[get_visitor_id] = lambda: "test-visitor"
         self.client = TestClient(app)
+        self.query_count = 0
+
+        def count_queries(*_args):
+            self.query_count += 1
+
+        self._count_queries = count_queries
+        event.listen(self.engine, "before_cursor_execute", self._count_queries)
 
     def tearDown(self):
+        event.remove(self.engine, "before_cursor_execute", self._count_queries)
         self.client.close()
         app.dependency_overrides.clear()
         self.engine.dispose()
@@ -101,7 +109,9 @@ class EventListTests(unittest.TestCase):
                 ),
             ])
 
+        queries_before = self.query_count
         response = self.client.get("/api/events?status=active&min_articles=1&sort=score")
+        list_queries = self.query_count - queries_before
         self.assertEqual(response.status_code, 200)
         payload = {event["name"]: event for event in response.json()}
         self.assertEqual(payload["Visited"]["new_since_visit"], 2)
@@ -109,6 +119,22 @@ class EventListTests(unittest.TestCase):
         self.assertEqual(payload["Unvisited"]["new_since_visit"], 1)
         self.assertEqual(payload["Unvisited"]["publisher_label"], "Source C")
         self.assertNotIn("Empty", payload)
+        self.assertLessEqual(list_queries, 12)
+
+    def test_event_list_returns_empty_after_minimum_article_filter(self):
+        now = datetime.now(timezone.utc)
+        with self.Session.begin() as db:
+            db.add(Event(
+                name="Empty",
+                status="active",
+                created_at=now,
+                last_article_at=now,
+                expires_at=now + timedelta(days=1),
+            ))
+
+        response = self.client.get("/api/events?status=active&min_articles=1&sort=score")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
 
 
 if __name__ == "__main__":

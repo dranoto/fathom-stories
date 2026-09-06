@@ -86,7 +86,13 @@ def create_db_and_tables() -> None:
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE article_reads"))
             Base.metadata.create_all(bind=engine, tables=[ArticleRead.__table__])
+            insp.clear_cache()
             logger.info("Migrated: dropped & recreated article_reads with visitor_id")
+        current_indexes = {index["name"] for index in insp.get_indexes("article_reads")}
+        for index in ArticleRead.__table__.indexes:
+            index.create(bind=engine, checkfirst=True)
+            if index.name not in current_indexes:
+                logger.info(f"Migrated: added article_reads index {index.name}")
     logger.info("Database tables created/verified.")
 
 

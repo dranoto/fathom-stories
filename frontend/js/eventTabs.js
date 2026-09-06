@@ -18,7 +18,6 @@ const INBOX_ID = "__inbox__";
 
 const CARD_WIDTH = 180;
 const GAP_WIDTH = 8;
-const CONTAINER_PADDING = 24;
 
 const NEW_STRIP_MAX_AGE_HOURS = 24;
 
@@ -46,15 +45,6 @@ function _getBarWidth() {
     if (w > 0) return w;
   }
   return _getViewportWidth();
-}
-
-function _computeTopN(events, viewportWidth) {
-  if (events.length <= 3) return events.length;
-  const TOTAL_PER_TOP = CARD_WIDTH + GAP_WIDTH;
-  const fixed = 2 * CARD_WIDTH + GAP_WIDTH;
-  const available = viewportWidth - fixed;
-  const maxN = Math.max(0, Math.floor(available / TOTAL_PER_TOP));
-  return Math.min(maxN, events.length - 1);
 }
 
 export function sortEventsForBar(events) {
@@ -104,7 +94,12 @@ export function partitionEvents(events, viewportWidth) {
   }
   const { rest } = partitionNewAndUpdated(events);
   const sorted = sortEventsForBar(rest);
-  const N = _computeTopN(rest, vw);
+  const reservedCards = rest.length > 0 ? 2 : 1;
+  const visibleCapacity = Math.max(
+    0,
+    Math.floor((vw - (reservedCards * CARD_WIDTH) - GAP_WIDTH) / (CARD_WIDTH + GAP_WIDTH)),
+  );
+  const N = Math.min(rest.length, visibleCapacity);
   const topN = sorted.slice(0, N);
   const shown = new Set(topN.map((e) => e.id));
   const minor = sorted.filter((e) => !shown.has(e.id));
@@ -178,9 +173,13 @@ function _inboxMarkup(activeId, inboxOpen, inboxN, inboxU) {
 
 function _minorToggleMarkup(events, drawerOpen, activeId, inboxOpen) {
   const totalCount = events.length;
-  const unreadCount = events.reduce((sum, event) => sum + (Number(event.unread_count) || 0), 0);
-  const updatedCount = events.reduce((sum, event) => sum + (Number(event.new_since_visit) || 0), 0);
-  const drawerEventIds = new Set(events.map((event) => event.id));
+  const unreadCount = events.reduce((sum, event) => sum + (Number(event && event.unread_count) || 0), 0);
+  const updatedCount = events.reduce((sum, event) => sum + (Number(event && event.new_since_visit) || 0), 0);
+  const drawerEventIds = new Set(
+    events
+      .map((event) => event && event.id)
+      .filter((id) => Number.isInteger(id))
+  );
   const chev = drawerOpen ? "▴" : "▾";
   const isDesk = isDesktopLayout();
   const label = isDesk
@@ -197,8 +196,9 @@ function _minorToggleMarkup(events, drawerOpen, activeId, inboxOpen) {
   const cls = ["event-tab", "minor-toggle", activeInDrawer ? "active" : ""]
     .filter(Boolean)
     .join(" ");
-  const title = `Show ${totalCount} ${totalCount === 1 ? "story" : "stories"}${unreadCount > 0 ? ` with ${unreadCount} unread article${unreadCount === 1 ? "" : "s"}` : ""}`;
-  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="${title}">
+  const action = drawerOpen ? "Hide" : "Show";
+  const title = `${action} ${totalCount} ${totalCount === 1 ? "story" : "stories"}${unreadCount > 0 ? ` with ${unreadCount} unread article${unreadCount === 1 ? "" : "s"}` : ""}`;
+  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" tabindex="0" aria-expanded="${drawerOpen ? "true" : "false"}" aria-controls="minor-drawer" title="${title}">
     <div class="name two-line"><span>${label}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">${activity}</div>
   </div>`;
@@ -217,6 +217,7 @@ let _drawerEl = null;
 function _ensureDrawerEl() {
   if (_drawerEl && document.body && document.body.contains(_drawerEl)) return _drawerEl;
   _drawerEl = document.createElement("div");
+  _drawerEl.id = "minor-drawer";
   _drawerEl.className = "minor-drawer";
   document.body.appendChild(_drawerEl);
   return _drawerEl;
@@ -273,6 +274,24 @@ function _renderDrawer(events, drawerOpen) {
 }
 
 let _lastCallbacks = null;
+let _resizeTimer = null;
+
+function _rerenderAfterResize() {
+  if (_resizeTimer !== null) window.clearTimeout(_resizeTimer);
+  _resizeTimer = window.setTimeout(() => {
+    _resizeTimer = null;
+    if (_lastCallbacks) {
+      renderEventTabs(
+        _lastCallbacks.onSelectEvent,
+        _lastCallbacks.onSelectInbox,
+        _lastCallbacks.onToggleMinor,
+      );
+    }
+  }, 120);
+}
+
+window.addEventListener("resize", _rerenderAfterResize);
+window.addEventListener("orientationchange", _rerenderAfterResize);
 
 window.addEventListener("minor-drawer-toggled", () => {
   if (_lastCallbacks) {
@@ -343,13 +362,19 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     el.addEventListener("click", () => onSelectInbox());
   });
   container.querySelectorAll(".event-tab[data-minor-toggle]").forEach((el) => {
-    el.addEventListener("click", () => {
+    const toggleDrawer = () => {
       if (typeof onToggleMinor === "function") {
         onToggleMinor();
       } else {
         setMinorDrawerOpen(!getMinorDrawerOpen());
         renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor);
       }
+    };
+    el.addEventListener("click", toggleDrawer);
+    el.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleDrawer();
     });
   });
 
@@ -359,8 +384,4 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
 export { INBOX_ID, _minorToggleMarkup, _cardMarkup };
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-export function setupEventTabs() {
-  return;
 }
