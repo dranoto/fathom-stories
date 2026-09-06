@@ -19,6 +19,7 @@ data/*.sqlite3
 logs/
 # Backup copies of the SQLite DB created during deploys / rollbacks.
 data/*.pre-*.bak
+data/*.pre-local-migration.*
 
 # Scraper extension (kept out of VCS so the bypass-paywalls build is downloaded fresh)
 # Note: the Fathom project historically kept this in the repo. fathom-stories follows the same convention.

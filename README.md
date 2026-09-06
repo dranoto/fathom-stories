@@ -10,7 +10,8 @@ The scraper, RSS pipeline, and bypass-paywalls Chrome extension are reused **ver
 - Scrapes full text using Playwright + the bypass-paywalls extension (same as Fathom)
 - LLM auto-assigns each new article to an existing event, a new event, or "uncategorized"
 - LLM also scores each article's importance (0-1) for bubble size in the timeline
-- Per-event: regenerating 3-section JSON summary (timeline, cross-source synthesis, progressive update)
+- Per-event summary updates are debounced and coalesced per event instead of regenerated once per hourly pass
+- Default UI layout includes a dedicated **New & updated** strip before the ranked event list
 - Move/remove from event, with corrections fed back to the LLM as few-shot examples
 - Daily recluster: surfaces merge/split/revive candidates (currently write-only, no UI)
 - Hourly lifecycle: events with no new articles for 7+ days auto-archive
@@ -57,10 +58,14 @@ All knobs live in `.env`. Restart the container (`docker compose restart app`) a
 | `DEFAULT_GROUPING_MODEL_NAME` | `FreeOnly` | Live grouping + recluster model |
 | `DEFAULT_CHAT_MODEL_NAME` | `FreeOnly` | Per-event chat model |
 | `RSS_FEED_URLS` | (none) | Comma-separated feed URLs or JSON list |
-| `DEFAULT_RSS_FETCH_INTERVAL_MINUTES` | `30` | Fetch cadence |
-| `LIVE_GROUP_WINDOW_HOURS` | `24` | Live pass only considers ungrouped articles published within this window |
+| `DEFAULT_RSS_FETCH_INTERVAL_MINUTES` | `60` | Fetch cadence |
+| `LIVE_GROUPING_INTERVAL_MINUTES` | `60` | Assign new articles to existing events; new-event proposals wait for regroup |
+| `REGROUP_INTERVAL_HOURS` | `6` | Expensive regroup cadence that may form cross-source events |
+| `SUMMARY_DEBOUNCE_MINUTES` | `20` | Coalesce summary changes for the same event before one LLM call |
+| `LIVE_GROUP_WINDOW_HOURS` | `24` | Live pass only considers newly fetched, ungrouped articles published within this window |
 | `LIVE_GROUP_MAX_ARTICLES` | `200` | Per-tick cap on ungrouped articles fed to the live LLM |
-| `LIVE_GROUP_BATCH_SIZE` | `200` | Articles per individual LLM call within a tick |
+| `LIVE_GROUP_BATCH_SIZE` | `50` | Articles per individual live-grouping LLM call |
+| `REGROUP_BATCH_SIZE` | `50` | Articles per individual regrouping LLM call |
 | `SCORE_LOG_BASE` | `2.0` | Log-base for the shaped-score magnitude curve |
 | `SCORE_FRESHNESS_HALF_LIFE_HOURS` | `8` | Score halves every N hours of quiet |
 | `SCORE_IMPORTANCE_FLOOR` | `0.5` | Baseline importance floor |

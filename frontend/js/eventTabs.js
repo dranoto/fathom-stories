@@ -20,6 +20,8 @@ const CARD_WIDTH = 180;
 const GAP_WIDTH = 8;
 const CONTAINER_PADDING = 24;
 
+const NEW_STRIP_MAX_AGE_HOURS = 24;
+
 function _ts(v) {
   if (!v) return 0;
   const t = new Date(v).getTime();
@@ -67,13 +69,42 @@ export function sortEventsForBar(events) {
   });
 }
 
+export function partitionNewAndUpdated(events) {
+  if (!events || !events.length) return { fresh: [], rest: [] };
+  const seen = getSeenEventIds();
+  const now = Date.now();
+  const fresh = [];
+  const rest = [];
+  for (const e of events) {
+    const newSinceVisit = Number(e && e.new_since_visit) || 0;
+    const createdAt = _ts(e && e.created_at);
+    const ageHours = createdAt > 0 ? (now - createdAt) / 3600000 : Infinity;
+    const isNeverSeen = !seen.has(e.id);
+    const isFreshByAge = ageHours <= NEW_STRIP_MAX_AGE_HOURS;
+    const isNew = newSinceVisit > 0 || (isNeverSeen && isFreshByAge);
+    if (isNew) fresh.push(e);
+    else rest.push(e);
+  }
+  fresh.sort((a, b) => {
+    const na = Number(a.new_since_visit) || 0;
+    const nb = Number(b.new_since_visit) || 0;
+    if (nb !== na) return nb - na;
+    const ca = _ts(a.created_at);
+    const cb = _ts(b.created_at);
+    if (cb !== ca) return cb - ca;
+    return _ts(b.last_article_at) - _ts(a.last_article_at);
+  });
+  return { fresh, rest };
+}
+
 export function partitionEvents(events, viewportWidth) {
   const vw = viewportWidth ?? _getBarWidth();
   if (!events || !events.length) {
     return { topN: [], minor: [] };
   }
-  const sorted = sortEventsForBar(events);
-  const N = _computeTopN(events, vw);
+  const { rest } = partitionNewAndUpdated(events);
+  const sorted = sortEventsForBar(rest);
+  const N = _computeTopN(rest, vw);
   const topN = sorted.slice(0, N);
   const shown = new Set(topN.map((e) => e.id));
   const minor = sorted.filter((e) => !shown.has(e.id));
@@ -81,9 +112,11 @@ export function partitionEvents(events, viewportWidth) {
 }
 
 export function buildNavOrder(events, viewportWidth) {
-  const { topN, minor } = partitionEvents(events, viewportWidth);
+  const { fresh } = partitionNewAndUpdated(events || []);
+  const { topN, minor } = partitionEvents(events || [], viewportWidth);
   return [
     { kind: "inbox" },
+    ...fresh.map((e) => ({ kind: "event", id: e.id })),
     ...topN.map((e) => ({ kind: "event", id: e.id })),
     ...minor.map((e) => ({ kind: "event", id: e.id })),
   ];
@@ -153,6 +186,14 @@ function _minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen, drawerE
   return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${totalCount} event${totalCount === 1 ? "" : "s"}">
     <div class="name two-line"><span>${label}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">click to ${drawerOpen ? "hide" : "show"}</div>
+  </div>`;
+}
+
+function _newStripHeaderMarkup(count) {
+  if (!count) return "";
+  return `<div class="new-strip-header" aria-hidden="true">
+    <span class="new-strip-label">New &amp; updated</span>
+    <span class="new-strip-count">${count}</span>
   </div>`;
 }
 
@@ -244,10 +285,22 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     return;
   }
 
+  const { fresh } = partitionNewAndUpdated(events);
   const { topN, minor } = partitionEvents(events);
   const isDesk = isDesktopLayout();
 
   const parts = [];
+
+  if (fresh.length > 0) {
+    parts.push('<div class="new-strip">');
+    parts.push(_newStripHeaderMarkup(fresh.length));
+    parts.push('<div class="new-strip-row">');
+    for (const e of fresh) {
+      parts.push(_cardMarkup(e, activeId, inboxOpen, "new-strip-item"));
+    }
+    parts.push("</div></div>");
+  }
+
   parts.push('<div class="event-bar-row">');
   parts.push(_inboxMarkup(activeId, inboxOpen, inboxN, inboxU));
   if (isDesk) {
@@ -296,48 +349,6 @@ export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-let wheelHandlerAttached = false;
-let resizeDebounceTimer = null;
-
 export function setupEventTabs() {
-  if (wheelHandlerAttached) return;
-  const tabs = document.getElementById("event-tabs");
-  if (!tabs) return;
-  wheelHandlerAttached = true;
-
-  const barRow = tabs.querySelector(".event-bar-row") || tabs;
-  barRow.addEventListener(
-    "wheel",
-    (e) => {
-      if (e.deltaY === 0 && e.deltaX === 0) return;
-      e.preventDefault();
-      barRow.scrollLeft += e.deltaY + e.deltaX;
-    },
-    { passive: false }
-  );
-
-  window.addEventListener("resize", () => {
-    if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
-    resizeDebounceTimer = setTimeout(() => {
-      resizeDebounceTimer = null;
-      if (_lastCallbacks) {
-        renderEventTabs(
-          _lastCallbacks.onSelectEvent,
-          _lastCallbacks.onSelectInbox,
-          _lastCallbacks.onToggleMinor
-        );
-      }
-      if (getMinorDrawerOpen()) _positionDrawer();
-    }, 120);
-  });
-
-  let scrollFrame = null;
-  window.addEventListener("scroll", () => {
-    if (!getMinorDrawerOpen()) return;
-    if (scrollFrame) return;
-    scrollFrame = requestAnimationFrame(() => {
-      scrollFrame = null;
-      _positionDrawer();
-    });
-  }, { passive: true });
+  return;
 }

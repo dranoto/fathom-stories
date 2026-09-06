@@ -39,6 +39,7 @@ def _init_llms(app: FastAPI) -> None:
         app.state.llm_summary_instance = None
         app.state.llm_grouping_instance = None
         app.state.llm_chat_instance = None
+        tasks.configure_summary_queue(None)
         return
     app.state.llm_summary_instance = initialize_llm(
         api_key=app_config.OPENAI_API_KEY,
@@ -64,6 +65,7 @@ def _init_llms(app: FastAPI) -> None:
         max_tokens=app_config.CHAT_MAX_OUTPUT_TOKENS,
         request_timeout=app_config.CHAT_REQUEST_TIMEOUT,
     )
+    tasks.configure_summary_queue(app.state.llm_summary_instance)
 
 
 @asynccontextmanager
@@ -102,7 +104,7 @@ async def lifespan(app: FastAPI):
         )
         scheduler.add_job(
             tasks.scheduled_regroup_uncategorized,
-            IntervalTrigger(hours=1),
+            IntervalTrigger(hours=app_config.REGROUP_INTERVAL_HOURS),
             id="regroup_uncategorized",
             next_run_time=datetime.now(timezone.utc) + timedelta(minutes=5),
             max_instances=1, coalesce=True,
@@ -131,6 +133,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
     except Exception:
         pass
+    await tasks.shutdown_summary_queue()
     await mcp_tools.shutdown_mcp_tools(app)
     logger.info("MAIN_API: shutdown complete")
 

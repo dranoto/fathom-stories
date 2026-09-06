@@ -18,8 +18,8 @@ services:
     ports:
       - "${MAIN_PORT:-8800}:8800"
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - /home/thankfulcarp/fathom-stories-local/data:/app/data
+      - /home/thankfulcarp/fathom-stories-local/logs:/app/logs
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8800/health || exit 1"]
       interval: 30s

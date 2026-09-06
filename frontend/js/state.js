@@ -16,7 +16,7 @@ let regeneratingTimers = new Map();
 const SORT_MODE_KEY = "fathom.sortMode";
 const SCORE_KNOBS_KEY = "fathom.scoreKnobs";
 
-const DEFAULT_SORT_MODE = "normal";
+const DEFAULT_SORT_MODE = "score";
 const DEFAULT_SCORE_KNOBS = {
   base: 2.0,
   halfLifeHours: 8.0,

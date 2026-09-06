@@ -52,7 +52,7 @@ function onReaderHistoryPop(top) {
 async function refreshEvents() {
   let all = [];
   try {
-    all = await listEvents({ minArticles: 2, status: "active" });
+    all = await listEvents({ minArticles: 1, status: "active" });
     setEvents(all);
   } catch (e) {
     setStatus("error", `load failed: ${e.message}`);

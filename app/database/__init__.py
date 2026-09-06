@@ -1,7 +1,9 @@
 # app/database/__init__.py
 import logging
 from contextlib import contextmanager
-from sqlalchemy import create_engine
+from pathlib import Path
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, Session
 
 from .models import (
@@ -13,10 +15,34 @@ from .. import config as app_config
 
 logger = logging.getLogger(__name__)
 
+if app_config.DATABASE_URL.startswith("sqlite"):
+    sqlite_connect_args = {
+        "check_same_thread": False,
+        "timeout": 30,
+    }
+else:
+    sqlite_connect_args = {}
+
 engine = create_engine(
     app_config.DATABASE_URL,
-    connect_args={"check_same_thread": False} if app_config.DATABASE_URL.startswith("sqlite") else {},
+    connect_args=sqlite_connect_args,
 )
+
+if app_config.DATABASE_URL.startswith("sqlite"):
+    sqlite_url = make_url(app_config.DATABASE_URL)
+    sqlite_path = sqlite_url.database
+    sqlite_absolute_path = str(Path(sqlite_path).resolve()) if sqlite_path else ""
+    sqlite_on_network_fs = sqlite_absolute_path.startswith(("/media/", "/mnt/"))
+
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite(dbapi_connection, connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        if not sqlite_on_network_fs:
+            cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 

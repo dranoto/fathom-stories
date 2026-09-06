@@ -34,10 +34,10 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 
 async def _regen_summary_after_move(event_id: int, article_id: int, llm) -> None:
     try:
-        from ..grouping.summary_service import generate_summary_update
-        await generate_summary_update(event_id, [article_id], llm)
+        from .. import tasks
+        await tasks.enqueue_summary_updates({event_id: [article_id]})
     except Exception as e:
-        logger.error(f"Background summary regen after move failed for event {event_id}: {e}", exc_info=True)
+        logger.error(f"Background summary queue after move failed for event {event_id}: {e}", exc_info=True)
 
 
 async def _regen_summary_after_remove(event_id: int, llm) -> None:

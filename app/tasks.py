@@ -11,10 +11,31 @@ from .grouping import engine as grouping_engine
 from .grouping import recluster as recluster_module
 from .grouping import lifecycle as lifecycle_module
 from .summarizer import initialize_llm
+from .grouping.summary_queue import build_summary_queue
 
 logger = logging.getLogger(__name__)
 
 rss_update_lock = asyncio.Lock()
+grouping_lock = asyncio.Lock()
+summary_queue = None
+
+
+def configure_summary_queue(llm) -> None:
+    global summary_queue
+    summary_queue = build_summary_queue(llm) if llm else None
+
+
+async def shutdown_summary_queue() -> None:
+    global summary_queue
+    if summary_queue is not None:
+        await summary_queue.shutdown()
+        summary_queue = None
+
+
+async def enqueue_summary_updates(event_increments) -> int:
+    if summary_queue is None:
+        return 0
+    return await summary_queue.enqueue(event_increments)
 
 
 def seed_feeds_from_env() -> None:
@@ -63,6 +84,37 @@ async def run_rss_fetch() -> int:
         return await _do_rss_fetch()
 
 
+async def run_grouping(llm=None, *, create_new_events: bool = False) -> dict:
+    if grouping_lock.locked():
+        return {"skipped": 1, "reason": "grouping already running"}
+    async with grouping_lock:
+        grouping_llm = llm or _get_grouping_llm()
+        if not grouping_llm:
+            return {"skipped": 1, "reason": "grouping LLM unavailable"}
+        increment_handler = enqueue_summary_updates if summary_queue is not None else None
+        result = await grouping_engine.assign_new_articles(
+            grouping_llm,
+            create_new_events=create_new_events,
+            on_event_increments=increment_handler,
+        )
+        return result
+
+
+async def run_regroup(llm=None) -> dict:
+    if grouping_lock.locked():
+        return {"skipped": 1, "reason": "grouping already running"}
+    async with grouping_lock:
+        grouping_llm = llm or _get_grouping_llm()
+        if not grouping_llm:
+            return {"skipped": 1, "reason": "grouping LLM unavailable"}
+        increment_handler = enqueue_summary_updates if summary_queue is not None else None
+        result = await grouping_engine.regroup_uncategorized(
+            grouping_llm,
+            on_event_increments=increment_handler,
+        )
+        return result
+
+
 async def scheduled_live_grouping() -> None:
     if not app_config.OPENAI_API_KEY:
         return
@@ -71,11 +123,7 @@ async def scheduled_live_grouping() -> None:
         return
     logger.info("TASKS: scheduled_live_grouping starting")
     try:
-        llm = _get_grouping_llm()
-        if not llm:
-            logger.warning("TASKS: grouping LLM init failed")
-            return
-        result = await grouping_engine.assign_new_articles(llm)
+        result = await run_grouping(create_new_events=False)
         logger.info(f"TASKS: live_grouping result: {result}")
     except Exception as e:
         logger.error(f"TASKS: scheduled_live_grouping failed: {e}", exc_info=True)
@@ -104,10 +152,7 @@ async def scheduled_regroup_uncategorized() -> None:
         return
     logger.info("TASKS: scheduled_regroup_uncategorized starting")
     try:
-        llm = _get_grouping_llm()
-        if not llm:
-            return
-        result = await grouping_engine.regroup_uncategorized(llm)
+        result = await run_regroup()
         logger.info(f"TASKS: regroup_uncategorized result: {result}")
     except Exception as e:
         logger.error(f"TASKS: scheduled_regroup_uncategorized failed: {e}", exc_info=True)

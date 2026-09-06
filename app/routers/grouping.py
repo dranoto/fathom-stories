@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session as SQLAlchemySession
 
 from .. import database, tasks
 from ..dependencies import get_llm_grouping
-from ..grouping import engine as grouping_engine
 from ..grouping import recluster as recluster_module
 from ..grouping import lifecycle as lifecycle_module
 
@@ -55,7 +54,7 @@ async def run_grouping(
         llm = get_llm_grouping(request)
     except HTTPException:
         raise
-    result = await grouping_engine.assign_new_articles(llm)
+    result = await tasks.run_grouping(llm, create_new_events=False)
     return {"status": "ok", **result}
 
 
@@ -68,7 +67,7 @@ async def run_regroup(
         llm = get_llm_grouping(request)
     except HTTPException:
         raise
-    result = await grouping_engine.regroup_uncategorized(llm)
+    result = await tasks.run_regroup(llm)
     return {"status": "ok", **result}
 
 

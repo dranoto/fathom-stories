@@ -21,7 +21,7 @@ DEFAULT_GROUPING_MODEL_NAME = os.getenv("DEFAULT_GROUPING_MODEL_NAME", "FreeOnly
 DEFAULT_CHAT_MODEL_NAME = os.getenv("DEFAULT_CHAT_MODEL_NAME", "FreeOnly")
 
 SUMMARY_MAX_OUTPUT_TOKENS = int(os.getenv("SUMMARY_MAX_OUTPUT_TOKENS", 4096))
-GROUPING_MAX_OUTPUT_TOKENS = int(os.getenv("GROUPING_MAX_OUTPUT_TOKENS", 128000))
+GROUPING_MAX_OUTPUT_TOKENS = int(os.getenv("GROUPING_MAX_OUTPUT_TOKENS", 8192))
 CHAT_MAX_OUTPUT_TOKENS = int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", 8192))
 
 try:
@@ -84,16 +84,28 @@ except ValueError:
     LIVE_GROUPING_INTERVAL_MINUTES = 60
 
 try:
-    REGROUP_BATCH_SIZE = int(os.getenv("REGROUP_BATCH_SIZE", "20"))
+    REGROUP_INTERVAL_HOURS = int(os.getenv("REGROUP_INTERVAL_HOURS", "6"))
 except ValueError:
-    logger.warning("Invalid REGROUP_BATCH_SIZE in .env. Using default 20.")
-    REGROUP_BATCH_SIZE = 20
+    logger.warning("Invalid REGROUP_INTERVAL_HOURS in .env. Using default 6.")
+    REGROUP_INTERVAL_HOURS = 6
 
 try:
-    LIVE_GROUP_BATCH_SIZE = int(os.getenv("LIVE_GROUP_BATCH_SIZE", "200"))
+    SUMMARY_DEBOUNCE_MINUTES = float(os.getenv("SUMMARY_DEBOUNCE_MINUTES", "20"))
 except ValueError:
-    logger.warning("Invalid LIVE_GROUP_BATCH_SIZE in .env. Using default 200.")
-    LIVE_GROUP_BATCH_SIZE = 200
+    logger.warning("Invalid SUMMARY_DEBOUNCE_MINUTES in .env. Using default 20.")
+    SUMMARY_DEBOUNCE_MINUTES = 20.0
+
+try:
+    REGROUP_BATCH_SIZE = int(os.getenv("REGROUP_BATCH_SIZE", "50"))
+except ValueError:
+    logger.warning("Invalid REGROUP_BATCH_SIZE in .env. Using default 50.")
+    REGROUP_BATCH_SIZE = 50
+
+try:
+    LIVE_GROUP_BATCH_SIZE = int(os.getenv("LIVE_GROUP_BATCH_SIZE", "50"))
+except ValueError:
+    logger.warning("Invalid LIVE_GROUP_BATCH_SIZE in .env. Using default 50.")
+    LIVE_GROUP_BATCH_SIZE = 50
 
 try:
     LIVE_GROUP_MAX_ARTICLES = int(os.getenv("LIVE_GROUP_MAX_ARTICLES", "200"))

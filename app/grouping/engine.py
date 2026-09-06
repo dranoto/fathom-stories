@@ -4,7 +4,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -34,7 +34,11 @@ def _normalize_event_name(name: str) -> str:
 def _articles_have_distinct_sources(articles: List[Article]) -> bool:
     if not app_config.REQUIRE_DISTINCT_SOURCES:
         return True
-    sources = {a.publisher_name for a in articles}
+    sources = {
+        (a.publisher_name or "").strip().casefold()
+        for a in articles
+        if (a.publisher_name or "").strip()
+    }
     return len(sources) >= 2
 
 
@@ -146,10 +150,14 @@ def _chunked(seq: List[Any], size: int):
 def fetch_ungrouped_articles(
     limit: Optional[int] = None,
     window_hours: Optional[int] = None,
+    *,
+    include_processed: bool = False,
 ) -> List[Article]:
     window_hours = window_hours if window_hours is not None else app_config.LIVE_GROUP_WINDOW_HOURS
     with db_session_scope() as db:
         q = db.query(Article).filter(Article.event_id.is_(None))
+        if not include_processed:
+            q = q.filter(Article.grouped_at.is_(None))
         if window_hours and window_hours > 0:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
             q = q.filter(or_(Article.published_date >= cutoff, Article.published_date.is_(None)))
@@ -189,7 +197,11 @@ def apply_assignments(assignments: List[Dict[str, Any]]) -> Dict[str, int]:
     return counts
 
 
-def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict[int, List[int]]]:
+def _apply_live(
+    assignments: List[Dict[str, Any]],
+    *,
+    create_new_events: bool = True,
+) -> Tuple[Dict[str, int], Dict[int, List[int]]]:
     counts = {
         "existing": 0,
         "new": 0,
@@ -237,7 +249,7 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
                         continue
                     importance = float(a.get("importance_score") or 0.5)
                     confidence = float(a.get("confidence") or 0.0)
-                    if not _articles_have_distinct_sources([article]):
+                    if not create_new_events or not _articles_have_distinct_sources([article]):
                         article.proposed_event_name = name
                         article.importance_score = importance
                         article.grouping_confidence = confidence
@@ -274,7 +286,12 @@ def _apply_live(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, int], Dict
     return counts, dict(event_increments)
 
 
-async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
+async def assign_new_articles(
+    llm: ChatOpenAI,
+    *,
+    create_new_events: bool = False,
+    on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
+) -> Dict[str, int]:
     articles = fetch_ungrouped_articles(
         limit=app_config.LIVE_GROUP_MAX_ARTICLES,
         window_hours=app_config.LIVE_GROUP_WINDOW_HOURS,
@@ -311,6 +328,7 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
                     active_payload=active_payload,
                     cooling_payload=cooling_payload,
                     few_shot_block=few_shot_block,
+                    create_new_events=create_new_events,
                 ),
                 timeout=GROUPING_GUARD_TIMEOUT,
             )
@@ -326,7 +344,10 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
             event_increments[ev_id].extend(ids)
 
     if all_assignments:
-        applied_counts, applied_increments = _apply_live(all_assignments)
+        applied_counts, applied_increments = _apply_live(
+            all_assignments,
+            create_new_events=create_new_events,
+        )
         counts["existing"] += applied_counts.get("existing", 0)
         counts["new"] += applied_counts.get("new", 0)
         counts["uncategorized"] += applied_counts.get("uncategorized", 0)
@@ -334,17 +355,21 @@ async def assign_new_articles(llm: ChatOpenAI) -> Dict[str, int]:
         for ev_id, ids in applied_increments.items():
             event_increments[ev_id].extend(ids)
 
-    from .summary_service import generate_summary_update
-    for event_id, new_ids in event_increments.items():
-        try:
-            await asyncio.wait_for(
-                generate_summary_update(event_id, new_ids, llm),
-                timeout=SUMMARY_GUARD_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
-        except Exception as e:
-            logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
+    if event_increments:
+        if on_event_increments is not None:
+            await on_event_increments(dict(event_increments))
+        else:
+            from .summary_service import generate_summary_update
+            for event_id, new_ids in event_increments.items():
+                try:
+                    await asyncio.wait_for(
+                        generate_summary_update(event_id, new_ids, llm),
+                        timeout=SUMMARY_GUARD_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
+                except Exception as e:
+                    logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
     return counts
 
@@ -381,6 +406,7 @@ async def _assign_chunk(
     active_payload: List[Dict[str, Any]],
     cooling_payload: List[Dict[str, Any]],
     few_shot_block: str,
+    create_new_events: bool,
 ) -> Optional[Tuple[List[Dict[str, Any]], Dict[int, List[int]]]]:
     payload = [_article_for_prompt(a) for a in chunk]
     prompt = build_group_assign_prompt(
@@ -424,8 +450,16 @@ async def _assign_chunk(
     return parsed.get("assignments", []), {}
 
 
-async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
-    articles = fetch_ungrouped_articles(limit=100)
+async def regroup_uncategorized(
+    llm: ChatOpenAI,
+    *,
+    on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
+) -> Dict[str, int]:
+    articles = fetch_ungrouped_articles(
+        limit=100,
+        window_hours=0,
+        include_processed=True,
+    )
     if not articles:
         logger.info("REGROUP: no ungrouped articles")
         return {"existing": 0, "new_events": 0, "new_singletons": 0, "uncategorized": 0, "errors": 0, "skipped": 1, "batches": 0, "batches_failed": 0}
@@ -506,18 +540,25 @@ async def regroup_uncategorized(llm: ChatOpenAI) -> Dict[str, int]:
             logger.error(f"Auto-initial summary timed out for event {new_event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
         except Exception as e:
             logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
-    for event_id, new_ids in event_increments.items():
-        if event_id in new_event_ids_set:
-            continue
-        try:
-            await asyncio.wait_for(
-                generate_summary_update(event_id, new_ids, llm),
-                timeout=SUMMARY_GUARD_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
-        except Exception as e:
-            logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
+    queued_increments = {
+        event_id: new_ids
+        for event_id, new_ids in event_increments.items()
+        if event_id not in new_event_ids_set
+    }
+    if queued_increments:
+        if on_event_increments is not None:
+            await on_event_increments(queued_increments)
+        else:
+            for event_id, new_ids in queued_increments.items():
+                try:
+                    await asyncio.wait_for(
+                        generate_summary_update(event_id, new_ids, llm),
+                        timeout=SUMMARY_GUARD_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
+                except Exception as e:
+                    logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
     dedup_counts: Dict[str, int] = {}
     try:
