@@ -136,6 +136,9 @@ function _cardMarkup(e, activeId, inboxOpen, group) {
   const metaLine = total > 0
     ? `${total} article${total === 1 ? "" : "s"}${allRead ? " · all read" : ` · ${unread} unread`}`
     : "";
+  const sourceLine = e.publisher_label
+    ? `<div class="sources">${escapeHtml(e.publisher_label)}</div>`
+    : "";
   const unreadDot = unread > 0
     ? `<span class="unread-dot" title="${unread} unread"></span>`
     : "";
@@ -153,6 +156,7 @@ function _cardMarkup(e, activeId, inboxOpen, group) {
     ${newTag}
     ${unreadDot}${newBadge}
     <div class="name two-line">${statusIcon}${escapeHtml(e.name)}</div>
+    ${sourceLine}
     ${metaLine ? `<div class="meta">${metaLine}</div>` : ""}
   </div>`;
 }
@@ -172,20 +176,31 @@ function _inboxMarkup(activeId, inboxOpen, inboxN, inboxU) {
   </div>`;
 }
 
-function _minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen, drawerEventIds) {
+function _minorToggleMarkup(events, drawerOpen, activeId, inboxOpen) {
+  const totalCount = events.length;
+  const unreadCount = events.reduce((sum, event) => sum + (Number(event.unread_count) || 0), 0);
+  const updatedCount = events.reduce((sum, event) => sum + (Number(event.new_since_visit) || 0), 0);
+  const drawerEventIds = new Set(events.map((event) => event.id));
   const chev = drawerOpen ? "▴" : "▾";
   const isDesk = isDesktopLayout();
   const label = isDesk
-    ? `${totalCount} Minor Event${totalCount === 1 ? "" : "s"}`
-    : `${totalCount} Event${totalCount === 1 ? "" : "s"}`;
+    ? `${totalCount} More ${totalCount === 1 ? "Story" : "Stories"}`
+    : `${totalCount} ${totalCount === 1 ? "Story" : "Stories"}`;
+  const activityParts = [];
+  if (updatedCount > 0) activityParts.push(`${updatedCount} new`);
+  if (unreadCount > 0) activityParts.push(`${unreadCount} unread`);
+  const activity = activityParts.length > 0
+    ? activityParts.join(" · ")
+    : drawerOpen ? "click to hide" : "click to show";
   const activeInDrawer = !drawerOpen && !inboxOpen && activeId != null &&
     drawerEventIds.has(activeId);
   const cls = ["event-tab", "minor-toggle", activeInDrawer ? "active" : ""]
     .filter(Boolean)
     .join(" ");
-  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="Show ${totalCount} event${totalCount === 1 ? "" : "s"}">
+  const title = `Show ${totalCount} ${totalCount === 1 ? "story" : "stories"}${unreadCount > 0 ? ` with ${unreadCount} unread article${unreadCount === 1 ? "" : "s"}` : ""}`;
+  return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" aria-expanded="${drawerOpen ? "true" : "false"}" title="${title}">
     <div class="name two-line"><span>${label}</span><span class="minor-toggle-chev">${chev}</span></div>
-    <div class="meta">click to ${drawerOpen ? "hide" : "show"}</div>
+    <div class="meta">${activity}</div>
   </div>`;
 }
 
@@ -309,11 +324,9 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
       parts.push(_cardMarkup(topN[i], activeId, inboxOpen, group));
     }
   }
-  const totalCount = isDesk ? minor.length : topN.length + minor.length;
-  const showToggle = isDesk ? minor.length > 0 : events.length > 0;
-  if (showToggle) {
-    const drawerEventIds = new Set(minor.map((e) => e.id));
-    parts.push(_minorToggleMarkup(totalCount, drawerOpen, activeId, inboxOpen, drawerEventIds));
+  const drawerEvents = isDesk ? minor : [...topN, ...minor];
+  if (drawerEvents.length > 0) {
+    parts.push(_minorToggleMarkup(drawerEvents, drawerOpen, activeId, inboxOpen));
   }
   parts.push("</div>");
 
@@ -340,11 +353,10 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     });
   });
 
-  const drawerEvents = isDesk ? minor : [...topN, ...minor];
   _renderDrawer(drawerEvents, drawerOpen);
 }
 
-export { INBOX_ID };
+export { INBOX_ID, _minorToggleMarkup, _cardMarkup };
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

@@ -118,15 +118,13 @@ async def run_regroup(llm=None) -> dict:
 async def scheduled_live_grouping() -> None:
     if not app_config.OPENAI_API_KEY:
         return
-    if rss_update_lock.locked():
-        logger.info("TASKS: rss_fetch in progress; deferring live_grouping")
-        return
-    logger.info("TASKS: scheduled_live_grouping starting")
-    try:
-        result = await run_grouping(create_new_events=False)
-        logger.info(f"TASKS: live_grouping result: {result}")
-    except Exception as e:
-        logger.error(f"TASKS: scheduled_live_grouping failed: {e}", exc_info=True)
+    async with rss_update_lock:
+        logger.info("TASKS: scheduled_live_grouping starting")
+        try:
+            result = await run_grouping(create_new_events=False)
+            logger.info(f"TASKS: live_grouping result: {result}")
+        except Exception as e:
+            logger.error(f"TASKS: scheduled_live_grouping failed: {e}", exc_info=True)
 
 
 async def scheduled_daily_recluster() -> None:
@@ -147,15 +145,13 @@ async def scheduled_daily_recluster() -> None:
 async def scheduled_regroup_uncategorized() -> None:
     if not app_config.OPENAI_API_KEY:
         return
-    if rss_update_lock.locked():
-        logger.info("TASKS: rss_fetch in progress; deferring regroup")
-        return
-    logger.info("TASKS: scheduled_regroup_uncategorized starting")
-    try:
-        result = await run_regroup()
-        logger.info(f"TASKS: regroup_uncategorized result: {result}")
-    except Exception as e:
-        logger.error(f"TASKS: scheduled_regroup_uncategorized failed: {e}", exc_info=True)
+    async with rss_update_lock:
+        logger.info("TASKS: scheduled_regroup_uncategorized starting")
+        try:
+            result = await run_regroup()
+            logger.info(f"TASKS: regroup_uncategorized result: {result}")
+        except Exception as e:
+            logger.error(f"TASKS: scheduled_regroup_uncategorized failed: {e}", exc_info=True)
 
 
 async def scheduled_lifecycle() -> None:

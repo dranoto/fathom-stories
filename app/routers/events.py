@@ -2,13 +2,15 @@
 import asyncio
 import json
 import logging
+import math
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session as SQLAlchemySession
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, and_, select
 
 from .. import database
 from ..database.models import Event, EventSummary, Article, ArticleRead, EventChatMessage
@@ -30,6 +32,23 @@ from .. import config as app_config
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+
+
+def _publisher_labels(rows) -> Dict[int, str]:
+    publishers_by_event = defaultdict(set)
+    for event_id, publisher_name in rows:
+        publisher = (publisher_name or "").strip()
+        if publisher:
+            publishers_by_event[int(event_id)].add(publisher)
+    labels = {}
+    for event_id, publishers in publishers_by_event.items():
+        ordered = sorted(publishers, key=str.casefold)
+        labels[event_id] = (
+            " · ".join(ordered)
+            if len(ordered) <= 2
+            else f"{ordered[0]} · {ordered[1]} +{len(ordered) - 2}"
+        )
+    return labels
 
 
 async def _regen_summary_after_move(event_id: int, article_id: int, llm) -> None:
@@ -88,10 +107,20 @@ async def list_events(
         events = [e for e in events if article_counts.get(e.id, 0) >= min_articles]
         if not events:
             return []
+        event_ids = [e.id for e in events]
     feed_counts = dict(
         db.query(Article.event_id, func.count(func.distinct(Article.feed_source_id)))
         .filter(Article.event_id.in_(event_ids), Article.feed_source_id.isnot(None))
         .group_by(Article.event_id)
+        .all()
+    )
+    publisher_labels = _publisher_labels(
+        db.query(Article.event_id, Article.publisher_name)
+        .filter(
+            Article.event_id.in_(event_ids),
+            Article.publisher_name.isnot(None),
+        )
+        .distinct()
         .all()
     )
     importance_avgs = dict(
@@ -108,16 +137,14 @@ async def list_events(
     boost_hours = score_new_boost_hours if score_new_boost_hours is not None else app_config.SCORE_NEW_EVENT_BOOST_HOURS
     boost_max = score_new_boost_max if score_new_boost_max is not None else app_config.SCORE_NEW_EVENT_BOOST_MAX
     read_demotion = score_read_demotion if score_read_demotion is not None else app_config.SCORE_READ_ALL_DEMOTION
-    read_article_ids_subq = (
-        db.query(ArticleRead.article_id)
-        .filter(ArticleRead.visitor_id == visitor_id)
-        .subquery()
+    read_article_ids = select(ArticleRead.article_id).where(
+        ArticleRead.visitor_id == visitor_id
     )
     unread_counts = dict(
         db.query(Article.event_id, func.count(Article.id))
         .filter(
             Article.event_id.in_(event_ids),
-            Article.id.notin_(read_article_ids_subq),
+            Article.id.notin_(read_article_ids),
         )
         .group_by(Article.event_id)
         .all()
@@ -132,25 +159,31 @@ async def list_events(
         .all()
     )
     visits_by_event = {row[0]: row[1] for row in visit_rows}
-    new_since_visit: dict = {}
-    for ev in events:
-        last_visit = visits_by_event.get(ev.id)
-        if last_visit is None:
-            new_since_visit[ev.id] = article_counts.get(ev.id, 0)
-        else:
-            compare_at = last_visit
-            if compare_at.tzinfo is not None:
-                compare_at = compare_at.replace(tzinfo=None)
-            n = (
-                db.query(func.count(Article.id))
-                .filter(
-                    Article.event_id == ev.id,
-                    Article.fetched_at > compare_at,
-                )
-                .scalar()
-                or 0
-            )
-            new_since_visit[ev.id] = int(n)
+    visited_event_ids = [int(event_id) for event_id in visits_by_event]
+    changed_counts = dict(
+        db.query(Article.event_id, func.count(Article.id))
+        .join(
+            EventVisit,
+            and_(
+                EventVisit.event_id == Article.event_id,
+                EventVisit.visitor_id == visitor_id,
+            ),
+        )
+        .filter(
+            Article.event_id.in_(visited_event_ids),
+            Article.fetched_at > EventVisit.last_visited_at,
+        )
+        .group_by(Article.event_id)
+        .all()
+    ) if visited_event_ids else {}
+    new_since_visit = {
+        ev.id: (
+            int(changed_counts.get(ev.id, 0))
+            if ev.id in visits_by_event
+            else article_counts.get(ev.id, 0)
+        )
+        for ev in events
+    }
 
     newness_boost_by_id: Dict[int, float] = {}
     for ev in events:
@@ -181,7 +214,6 @@ async def list_events(
         demotion = read_demotion_by_id.get(ev.id, 1.0)
         score_value = None
         if sort == "score":
-            import math
             magnitude = math.log(1 + max(0, article_count)) / math.log(base)
             if cap is not None:
                 magnitude = min(magnitude, cap)
@@ -209,6 +241,7 @@ async def list_events(
             unread_count=unread_counts.get(ev.id, 0),
             read_count=max(0, article_count - unread_counts.get(ev.id, 0)),
             feed_count=feed_counts.get(ev.id, 0),
+            publisher_label=publisher_labels.get(ev.id),
             importance_avg=importance_avg,
             new_since_visit=new_since_visit.get(ev.id, 0),
             score=score_value,

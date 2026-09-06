@@ -46,6 +46,7 @@ class EventResponse(BaseModel):
     unread_count: Optional[int] = 0
     read_count: Optional[int] = 0
     feed_count: Optional[int] = 0
+    publisher_label: Optional[str] = None
     importance_avg: Optional[float] = 0.0
     new_since_visit: Optional[int] = 0
     score: Optional[float] = None

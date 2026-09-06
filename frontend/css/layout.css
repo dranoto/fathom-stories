@@ -189,6 +189,14 @@ body {
   padding-right: 0;
 }
 .event-tab.active .name { color: #0f1419; }
+.event-tab .sources {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-tab.active .sources { color: rgba(15, 20, 25, 0.7); }
 .event-tab .meta {
   font-size: 11px;
   color: var(--text-dim);

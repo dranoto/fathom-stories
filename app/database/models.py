@@ -200,5 +200,6 @@ class EventChatMessage(Base):
 
 
 Index("ix_articles_event_published", Article.event_id, Article.published_date)
+Index("ix_article_reads_visitor_article", ArticleRead.visitor_id, ArticleRead.article_id)
 Index("ix_events_status_last_article", Event.status, Event.last_article_at)
 Index("ix_event_chat_messages_event_visitor_created", EventChatMessage.event_id, EventChatMessage.visitor_id, EventChatMessage.created_at)

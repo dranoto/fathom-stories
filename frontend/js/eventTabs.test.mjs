@@ -12,6 +12,7 @@ globalThis.window = {
   innerWidth: 1200,
   addEventListener() {},
   dispatchEvent() {},
+  matchMedia() { return { matches: true }; },
 };
 globalThis.document = {
   documentElement: { clientWidth: 1200 },
@@ -22,8 +23,14 @@ globalThis.document = {
 };
 globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
 
-const { partitionNewAndUpdated, partitionEvents, buildNavOrder, sortEventsForBar } =
-  await import("./eventTabs.js");
+const {
+  partitionNewAndUpdated,
+  partitionEvents,
+  buildNavOrder,
+  sortEventsForBar,
+  _minorToggleMarkup,
+  _cardMarkup,
+} = await import("./eventTabs.js");
 
 const NOW = new Date("2026-09-06T12:00:00Z").getTime();
 const oneHourAgo = new Date(NOW - 1 * 3600 * 1000).toISOString();
@@ -117,6 +124,39 @@ test("buildNavOrder: places fresh events ahead of topN and minor", () => {
   assert.ok(freshIdx > inboxIdx, "fresh event 2 appears after inbox");
   assert.ok(stableIdx > freshIdx,
     `stable event 3 must appear after fresh event 2; nav=${JSON.stringify(nav)}`);
+});
+
+test("event cards show source context and escape publisher markup", () => {
+  const markup = _cardMarkup({
+    id: 8,
+    name: "Story",
+    article_count: 3,
+    unread_count: 2,
+    new_since_visit: 0,
+    publisher_label: "Source A · <Source B>",
+  }, null, false, "top");
+  assert.match(markup, /class="sources"/);
+  assert.match(markup, /Source A · &lt;Source B&gt;/);
+  assert.match(markup, /3 articles · 2 unread/);
+});
+
+test("minor drawer toggle summarizes hidden story activity", () => {
+  const markup = _minorToggleMarkup([
+    { id: 1, unread_count: 3, new_since_visit: 2 },
+    { id: 2, unread_count: 4, new_since_visit: 0 },
+  ], false, null, false);
+  assert.match(markup, /2 More Stories/);
+  assert.match(markup, /2 new · 7 unread/);
+  assert.match(markup, /with 7 unread articles/);
+});
+
+test("minor drawer toggle uses singular story label", () => {
+  const markup = _minorToggleMarkup([
+    { id: 3, unread_count: 0, new_since_visit: 0 },
+  ], false, 3, false);
+  assert.match(markup, /1 More Story/);
+  assert.match(markup, /click to show/);
+  assert.match(markup, /minor-toggle active/);
 });
 
 test("sortEventsForBar: respects score mode (default after fix)", () => {
