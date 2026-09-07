@@ -69,11 +69,11 @@ export function setupReaderHistory(onPop) {
         if (_onPop) _onPop(null);
         return;
       }
-      if (!_isMobile()) {
-        _stack.pop();
-        if (_onPop) _onPop(_stack.length > 0 ? _stack[_stack.length - 1] : null);
-        return;
-      }
+      const isMobile = _isMobile();
+      _stack.pop();
+      const next = _stack.length > 0 ? _stack[_stack.length - 1] : null;
+      if (_onPop) _onPop(next);
+      if (!isMobile) return;
       _suppressPop = true;
       try {
         history.back();
