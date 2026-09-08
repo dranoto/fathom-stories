@@ -51,6 +51,36 @@ def _publisher_labels(rows) -> Dict[int, str]:
     return labels
 
 
+async def _queue_summary_regeneration(event_ids) -> None:
+    valid_ids: list[int] = []
+    for event_id in event_ids:
+        if event_id is None:
+            continue
+        try:
+            valid_ids.append(int(event_id))
+        except (TypeError, ValueError):
+            continue
+    if not valid_ids:
+        return
+    try:
+        from .. import tasks
+        queued = 0
+        for event_id in dict.fromkeys(valid_ids):
+            with database.db_session_scope() as db:
+                article_ids = [
+                    row[0]
+                    for row in db.query(Article.id)
+                    .filter(Article.event_id == event_id)
+                    .all()
+                ]
+            if article_ids:
+                queued += await tasks.enqueue_summary_updates({event_id: article_ids})
+        if queued == 0:
+            logger.info(f"No summary regeneration queued for events {valid_ids}")
+    except Exception as e:
+        logger.error(f"Background summary regeneration failed for events {valid_ids}: {e}", exc_info=True)
+
+
 async def _regen_summary_after_move(event_id: int, article_id: int, llm) -> None:
     try:
         from .. import tasks
@@ -378,6 +408,7 @@ async def get_event(
     if latest_summary and latest_summary.summary_json:
         sj = dict(latest_summary.summary_json)
         sj["article_ids"] = latest_summary.article_ids or []
+        sj["generated_at"] = latest_summary.generated_at
         try:
             summary_data = EventSummaryData(**sj)
         except Exception:
@@ -595,6 +626,7 @@ async def move_article(
     event_id: int,
     article_id: int,
     body: MoveArticleRequest,
+    background_tasks: BackgroundTasks,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     source = verify_event_exists(db, event_id)
@@ -641,7 +673,10 @@ async def move_article(
         logger.error(f"Error moving article: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to move article")
     target_ev = verify_event_exists(db, target_id)
-    article_count = db.query(func.count(Article.id)).filter(Article.event_id == target_id).scalar() or 0
+    source_id = int(getattr(source, "id", event_id))
+    target_id_int = int(target_id)
+    background_tasks.add_task(_queue_summary_regeneration, [source_id, target_id_int])
+    article_count = db.query(func.count(Article.id)).filter(Article.event_id == target_id_int).scalar() or 0
     return EventResponse(
         id=target_ev.id, name=target_ev.name, description=target_ev.description, status=target_ev.status,
         created_at=target_ev.created_at, last_article_at=target_ev.last_article_at,
@@ -656,6 +691,7 @@ async def merge_events(
     event_id: int,
     other_id: int,
     body: MergeRequest,
+    background_tasks: BackgroundTasks,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     if event_id == other_id:
@@ -677,6 +713,7 @@ async def merge_events(
         db.rollback()
         logger.error(f"Error merging events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to merge events")
+    background_tasks.add_task(_queue_summary_regeneration, [event_id])
     return {"message": f"Merged {other_id} into {event_id}", "primary_event_id": event_id}
 
 
@@ -684,6 +721,7 @@ async def merge_events(
 async def split_event(
     event_id: int,
     body: SplitRequest,
+    background_tasks: BackgroundTasks,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
     parent = verify_event_exists(db, event_id)
@@ -724,6 +762,7 @@ async def split_event(
         db.rollback()
         logger.error(f"Error splitting event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to split event")
+    background_tasks.add_task(_queue_summary_regeneration, [int(event_id), int(getattr(new_ev, "id", 0))])
     article_count = db.query(func.count(Article.id)).filter(Article.event_id == new_ev.id).scalar() or 0
     return EventResponse(
         id=new_ev.id, name=new_ev.name, description=new_ev.description, status=new_ev.status,

@@ -133,7 +133,14 @@ function setupReaderSwipeDismiss(pane) {
       const exitDir = dy >= 0 ? 1 : -1;
       pane.style.transform = `translateY(${exitDir * 100}vh)`;
       pane.style.opacity = "0";
+      const expectedTop = _nav ? _nav.top() : null;
       setTimeout(() => {
+        if (_nav && _nav.top() !== expectedTop) {
+          pane.classList.remove("swipe-dismissing");
+          pane.style.transform = "";
+          pane.style.opacity = "";
+          return;
+        }
         if (_nav) _nav.closeTop();
         else closeReader();
         requestAnimationFrame(() => {
@@ -603,7 +610,7 @@ async function openChat(eventId, opts) {
       <button type="submit" id="chat-send-btn" class="btn-primary">Send</button>
     </form>
     <div class="chat-actions">
-      <button type="button" id="chat-back-btn" class="btn-link">← Back to summary</button>
+      <button type="button" id="chat-back-btn" class="btn-link">← Back</button>
     </div>
   `;
 
@@ -627,7 +634,10 @@ async function openChat(eventId, opts) {
   });
 
   inputEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      backBtn.click();
+    } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       formEl.requestSubmit();
     }
@@ -726,7 +736,8 @@ async function handleChatSubmit(eventId, messagesEl, inputEl, sendBtn) {
     chatAbortController = null;
     sendBtn.disabled = false;
     inputEl.disabled = false;
-    inputEl.focus();
+    const pane = document.getElementById("reader-pane");
+    if (pane && !pane.hidden && document.contains(inputEl)) inputEl.focus();
 
     if (fullAnswer.trim()) {
       try {

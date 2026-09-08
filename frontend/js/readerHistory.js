@@ -18,6 +18,7 @@
 
 let _stack = [];
 let _suppressPop = false;
+let _suppressTimer = null;
 let _onPop = null;
 let _nav = null;
 
@@ -39,6 +40,10 @@ function _hashFor(entry) {
 function _onPopState() {
   if (_suppressPop) {
     _suppressPop = false;
+    if (_suppressTimer !== null) {
+      clearTimeout(_suppressTimer);
+      _suppressTimer = null;
+    }
     return;
   }
   if (_stack.length === 0) {
@@ -75,10 +80,17 @@ export function setupReaderHistory(onPop) {
       if (_onPop) _onPop(next);
       if (!isMobile) return;
       _suppressPop = true;
+      if (_suppressTimer !== null) clearTimeout(_suppressTimer);
+      _suppressTimer = setTimeout(() => {
+        _suppressPop = false;
+        _suppressTimer = null;
+      }, 500);
       try {
         history.back();
       } catch (_) {
         _suppressPop = false;
+        clearTimeout(_suppressTimer);
+        _suppressTimer = null;
       }
     },
     isEmpty: () => _stack.length === 0,

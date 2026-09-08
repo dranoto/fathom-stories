@@ -29,7 +29,7 @@ async function refreshCachedFeeds() {
 }
 
 function isMobileWidth() {
-  return window.matchMedia("(max-width: 640px)").matches;
+  return !isDesktopLayout();
 }
 
 function buildMenuBody() {
@@ -414,7 +414,6 @@ function rescoreLocal() {
   const sorted = sortEventsByScore(current, getScoreKnobs());
   setEvents(sorted);
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
-  window.dispatchEvent(new CustomEvent("events-rescored"));
 }
 
 async function rescoreAndRefetch() {
@@ -468,11 +467,11 @@ export function setupMobileMenu(nav, onAfterRefresh) {
       else closeMenu();
     }
   });
-  document.addEventListener("mobile-menu-refresh-chips", () => {
-    if (!isOpen) return;
-    if (isMobileWidth()) renderSheetBody();
-    else renderPanelBody();
-    if (getSortMode() === "score") _updateKnobPreview();
+  window.addEventListener("beforeinstallprompt", () => {
+    if (isOpen) rerender();
+  });
+  window.addEventListener("appinstalled", () => {
+    if (isOpen) rerender();
   });
   window.addEventListener("theme-changed", () => {
     if (!isOpen) return;

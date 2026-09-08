@@ -12,10 +12,11 @@ class EventSummaryData(BaseModel):
     timeline_narrative: Optional[Any] = None
     cross_source_synthesis: Optional[Any] = None
     progressive_summary: Optional[str] = None
-    article_ids: Optional[List[int]] = []
+    article_ids: Optional[List[int]] = None
     article_count: Optional[int] = None
     feed_count: Optional[int] = None
     date_range: Optional[str] = None
+    generated_at: UtcDateTime = None
     key_developments: Optional[List[str]] = None
 
 

@@ -68,7 +68,6 @@ export function setScoreKnobs(next) {
   }
   scoreKnobs = merged;
   try { localStorage.setItem(SCORE_KNOBS_KEY, JSON.stringify(scoreKnobs)); } catch (_) {}
-  window.dispatchEvent(new CustomEvent("score-knobs-changed", { detail: { knobs: { ...scoreKnobs } } }));
 }
 export function resetScoreKnobs() {
   setScoreKnobs({ ...DEFAULT_SCORE_KNOBS });
@@ -81,7 +80,6 @@ export function getActiveEventId() { return activeEventId; }
 export function setActiveEventId(id) { activeEventId = id; }
 export function getActiveEventDetail() { return activeEventDetail; }
 export function setActiveEventDetail(v) { activeEventDetail = v; }
-export function getReadArticleIds() { return readArticleIds; }
 export function isRead(articleId) { return readArticleIds.has(articleId); }
 export function markRead(articleId) { readArticleIds.add(articleId); }
 export function markUnread(articleId) { readArticleIds.delete(articleId); }
@@ -191,8 +189,4 @@ export function markEventSeen(eventId) {
   set.add(id);
   _writeSeenEventIds(set);
   window.dispatchEvent(new CustomEvent("event-seen-changed", { detail: { eventId: id } }));
-}
-export function resetSeenEventIds() {
-  try { localStorage.removeItem(SEEN_EVENTS_KEY); } catch (_) {}
-  window.dispatchEvent(new CustomEvent("event-seen-changed", { detail: { reset: true } }));
 }

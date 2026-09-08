@@ -3,8 +3,6 @@ const STORAGE_KEY = "fathom-stories:theme";
 
 export function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  const btn = document.getElementById("btn-theme");
-  if (btn) btn.textContent = theme === "light" ? "◑" : "◐";
 }
 
 export function currentTheme() {

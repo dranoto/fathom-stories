@@ -45,10 +45,6 @@ export async function getEvent(id) {
   return handleFetch(`/api/events/${id}`);
 }
 
-export async function getEventSummary(id) {
-  return handleFetch(`/api/events/${id}/summary`);
-}
-
 export async function generateEventSummary(id) {
   return handleFetch(`/api/events/${id}/summary`, { method: "POST" });
 }

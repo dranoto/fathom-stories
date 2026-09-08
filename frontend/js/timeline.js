@@ -1,7 +1,7 @@
 // frontend/js/timeline.js
 import { getActiveEventDetail, getActiveEventId, getCurrentArticleId, isEventRegenerating, isRead, setActiveEventDetail, getUngroupedArticles, setUngroupedArticles, setInboxCounts, markRead as stateMarkRead, patchEventUnreadCount, dispatchReadStateChanged } from "./state.js";
 import { getEvent, listUngroupedArticles, runRegroup, markAllEventArticlesRead } from "./apiService.js";
-import { renderEventTabs, escapeHtml as tabsEscape } from "./eventTabs.js";
+import { renderEventTabs } from "./eventTabs.js";
 
 window.addEventListener("current-article-changed", (e) => {
   const id = e.detail && e.detail.articleId;

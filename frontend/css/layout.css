@@ -73,8 +73,15 @@ body {
   border: 1px solid var(--border);
   color: var(--text-dim);
   font-size: 11px;
+  font-family: inherit;
+  line-height: inherit;
+  appearance: none;
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
+}
+.countdown-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .countdown-chip .chip-label {
   text-transform: uppercase;

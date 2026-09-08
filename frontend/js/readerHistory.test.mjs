@@ -61,3 +61,17 @@ test("mobile closeTop reveals the previous modal without double-popping", () => 
   assert.equal(nav.top(), null);
   assert.equal(popped.at(-1), null);
 });
+
+test("closeTop suppression expires when history.back emits no popstate", async () => {
+  const popped = [];
+  const nav = setupReaderHistory((entry) => popped.push(entry));
+
+  nav.push({ kind: "article", articleId: 99 });
+  nav.closeTop();
+  await new Promise((resolve) => setTimeout(resolve, 550));
+
+  nav.push({ kind: "summary", eventId: 8 });
+  popstateHandler();
+  assert.equal(nav.top(), null);
+  assert.equal(popped.at(-1), null);
+});
