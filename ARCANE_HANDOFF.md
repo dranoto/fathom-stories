@@ -36,6 +36,28 @@ The canonical compose mounts are therefore:
 - `/home/thankfulcarp/fathom-stories-local/data:/app/data`
 - `/home/thankfulcarp/fathom-stories-local/logs:/app/logs`
 
+## Jev live-classifier workflow
+The live article pass now supports OpenCode Zen SystemOne as a bounded classifier:
+- one request per new article
+- active/cooling events plus `none` as destination choices
+- destination and importance answered in the same Jev request
+- confidence below `JEV_MIN_CONFIDENCE` stays ungrouped
+- successful `none`/low-confidence decisions are marked processed for the full-model regroup pool
+- transport/parse failures remain unprocessed and retry on a later live pass
+- the full grouping LLM still performs periodic new-event creation, revival, and deduplication
+
+The production settings are intended to be:
+- `JEV_ENABLED=true`
+- `JEV_ENDPOINT=https://opencode.ai/zen/v1/systemone`
+- `JEV_MODEL=jev-1.13`
+- `JEV_MIN_CONFIDENCE=0.90`
+- `JEV_MAX_EVENT_CANDIDATES=80`
+- `JEV_MAX_REQUEST_BYTES=28000`, a UTF-8 byte ceiling conservatively below Jev's 32k-token context window
+- `JEV_FAILURE_THRESHOLD=8` and `JEV_CIRCUIT_COOLDOWN_SECONDS=300`
+- `JEV_BATCH_TIMEOUT_SECONDS=120`, the classification-phase deadline before assignment writes and queued summary work
+
+A live read-only probe against the authoritative database classified the newest ungrouped article against six active events and returned event 720 at 0.92 confidence. The project environment must receive `OPENCODE_ZEN_API_KEY` without logging or committing the value.
+
 ## Recovered state
 A manual regroup against the live database recovered five new events and revived one existing event. The old code remains unsafe until the image and Arcane environment are recreated with the grouping reasoning setting.
 
@@ -45,10 +67,10 @@ Run the unit suite before deployment, then verify after recreation:
 ```bash
 python3 -m unittest discover -s tests -v
 curl -s localhost:8800/api/events/_stats/all
-docker inspect fathom-stories --format '{{json .Mounts}}'
-docker exec fathom-stories printenv GROUPING_REASONING_EFFORT
-docker exec fathom-stories printenv SUMMARY_REASONING_EFFORT
-docker exec fathom-stories printenv SUMMARY_MAX_OUTPUT_TOKENS
+docker inspect fathom-stories-app-1 --format '{{json .Mounts}}'
+docker exec fathom-stories-app-1 printenv GROUPING_REASONING_EFFORT
+docker exec fathom-stories-app-1 printenv SUMMARY_REASONING_EFFORT
+docker exec fathom-stories-app-1 printenv SUMMARY_MAX_OUTPUT_TOKENS
 ```
 
 Expected configuration:

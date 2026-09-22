@@ -8,6 +8,22 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        logger.warning(f"Invalid {name} in .env. Using default {default}.")
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        logger.warning(f"Invalid {name} in .env. Using default {default}.")
+        return default
+
 # --- Database Configuration ---
 SQLITE_DB_SUBDIR = "data"
 SQLITE_DB_FILE = "stories.db"
@@ -28,6 +44,19 @@ LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "").strip()
 SUMMARY_REASONING_EFFORT = os.getenv("SUMMARY_REASONING_EFFORT", LLM_REASONING_EFFORT or "medium").strip()
 GROUPING_REASONING_EFFORT = os.getenv("GROUPING_REASONING_EFFORT", LLM_REASONING_EFFORT or "none").strip()
 CHAT_REASONING_EFFORT = os.getenv("CHAT_REASONING_EFFORT", LLM_REASONING_EFFORT).strip()
+
+JEV_ENABLED = os.getenv("JEV_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+JEV_API_KEY = os.getenv("JEV_API_KEY") or os.getenv("OPENCODE_ZEN_API_KEY")
+JEV_ENDPOINT = os.getenv("JEV_ENDPOINT", "https://opencode.ai/zen/v1/systemone").strip()
+JEV_MODEL = os.getenv("JEV_MODEL", "jev-1.13").strip()
+JEV_TIMEOUT_SECONDS = _env_float("JEV_TIMEOUT_SECONDS", 10.0)
+JEV_MIN_CONFIDENCE = _env_float("JEV_MIN_CONFIDENCE", 0.90)
+JEV_MAX_CONCURRENCY = _env_int("JEV_MAX_CONCURRENCY", 8)
+JEV_MAX_EVENT_CANDIDATES = _env_int("JEV_MAX_EVENT_CANDIDATES", 80)
+JEV_MAX_REQUEST_BYTES = _env_int("JEV_MAX_REQUEST_BYTES", 28000)
+JEV_FAILURE_THRESHOLD = _env_int("JEV_FAILURE_THRESHOLD", 8)
+JEV_CIRCUIT_COOLDOWN_SECONDS = _env_float("JEV_CIRCUIT_COOLDOWN_SECONDS", 300.0)
+JEV_BATCH_TIMEOUT_SECONDS = _env_float("JEV_BATCH_TIMEOUT_SECONDS", 120.0)
 
 try:
     SUMMARY_REQUEST_TIMEOUT = float(os.getenv("SUMMARY_REQUEST_TIMEOUT", "300"))
@@ -606,6 +635,7 @@ logger.info(
     f"PURGE_ARCHIVE_AFTER_DAYS={PURGE_ARCHIVE_AFTER_DAYS}, PURGE_BATCH_LIMIT={PURGE_BATCH_LIMIT}, "
     f"PURGE_EMPTY_BATCH_LIMIT={PURGE_EMPTY_BATCH_LIMIT}, PURGE_EMPTY_FLOOR_SECONDS={PURGE_EMPTY_FLOOR_SECONDS}"
 )
+logger.info(f"CONFIG: JEV_ENABLED={JEV_ENABLED}, JEV_MODEL={JEV_MODEL}, JEV_ENDPOINT={JEV_ENDPOINT}, JEV_KEY_SET={'yes' if JEV_API_KEY else 'no'}")
 logger.info(f"CONFIG: LIVE_GROUP_BATCH_SIZE={LIVE_GROUP_BATCH_SIZE}, LIVE_GROUP_MAX_ARTICLES={LIVE_GROUP_MAX_ARTICLES}, LIVE_GROUP_WINDOW_HOURS={LIVE_GROUP_WINDOW_HOURS}")
 logger.info(f"CONFIG: CHAT_MCP_SERVERS={len(CHAT_MCP_SERVERS)} configured")
 logger.info(

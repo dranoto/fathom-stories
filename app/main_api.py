@@ -90,14 +90,18 @@ async def lifespan(app: FastAPI):
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     app.state.scheduler = scheduler
 
-    if app_config.OPENAI_API_KEY:
-        scheduler.add_job(
-            tasks.scheduled_rss_fetch,
-            IntervalTrigger(minutes=app_config.DEFAULT_RSS_FETCH_INTERVAL_MINUTES),
-            id="rss_fetch",
-            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=15),
-            max_instances=1, coalesce=True,
-        )
+    scheduler.add_job(
+        tasks.scheduled_rss_fetch,
+        IntervalTrigger(minutes=app_config.DEFAULT_RSS_FETCH_INTERVAL_MINUTES),
+        id="rss_fetch",
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=15),
+        max_instances=1, coalesce=True,
+    )
+    live_grouping_available = bool(
+        app_config.OPENAI_API_KEY
+        or (app_config.JEV_ENABLED and app_config.JEV_API_KEY)
+    )
+    if live_grouping_available:
         scheduler.add_job(
             tasks.scheduled_live_grouping,
             IntervalTrigger(minutes=app_config.LIVE_GROUPING_INTERVAL_MINUTES),
@@ -105,6 +109,10 @@ async def lifespan(app: FastAPI):
             next_run_time=datetime.now(timezone.utc) + timedelta(seconds=45),
             max_instances=1, coalesce=True,
         )
+    else:
+        logger.warning("MAIN_API: live grouping disabled because no grouping credential is configured")
+
+    if app_config.OPENAI_API_KEY:
         scheduler.add_job(
             tasks.scheduled_regroup_uncategorized,
             IntervalTrigger(hours=app_config.REGROUP_INTERVAL_HOURS),
@@ -118,17 +126,18 @@ async def lifespan(app: FastAPI):
             id="daily_recluster",
             max_instances=1, coalesce=True,
         )
-        scheduler.add_job(
-            tasks.scheduled_lifecycle,
-            IntervalTrigger(hours=app_config.LIFECYCLE_TICK_HOURS),
-            id="lifecycle",
-            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
-            max_instances=1, coalesce=True,
-        )
-        scheduler.start()
-        logger.info("MAIN_API: scheduler started")
     else:
-        logger.warning("MAIN_API: scheduler not started (no LLM key)")
+        logger.warning("MAIN_API: regroup, recluster, summaries, and chat disabled because OPENAI_API_KEY is not configured")
+
+    scheduler.add_job(
+        tasks.scheduled_lifecycle,
+        IntervalTrigger(hours=app_config.LIFECYCLE_TICK_HOURS),
+        id="lifecycle",
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
+        max_instances=1, coalesce=True,
+    )
+    scheduler.start()
+    logger.info("MAIN_API: scheduler started")
 
     yield
 

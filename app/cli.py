@@ -8,11 +8,11 @@ from datetime import datetime, timezone, timedelta
 import uvicorn
 
 from . import config as app_config
+from . import tasks
 from .database import create_db_and_tables, db_session_scope, FeedSource
 from .database.models import Base
 from .rss_client import update_all_subscribed_feeds, add_or_update_feed_source
 from .summarizer import initialize_llm
-from .grouping import engine as grouping_engine
 from .grouping import recluster as recluster_module
 from .grouping import lifecycle as lifecycle_module
 
@@ -211,15 +211,13 @@ def cmd_cleanup_bad(_args):
 
 def cmd_group(_args):
     create_db_and_tables()
-    llm = _get_grouping_llm()
-    result = asyncio.run(grouping_engine.assign_new_articles(llm, create_new_events=False))
+    result = asyncio.run(tasks.run_grouping(create_new_events=False))
     print(f"Grouping result: {result}")
 
 
 def cmd_regroup(_args):
     create_db_and_tables()
-    llm = _get_grouping_llm()
-    result = asyncio.run(grouping_engine.regroup_uncategorized(llm))
+    result = asyncio.run(tasks.run_regroup())
     print(f"Regroup result: {result}")
 
 

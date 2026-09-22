@@ -106,12 +106,23 @@ def find_or_create_event(
 
 
 def _event_summary_for_prompt(event: Event, max_titles: int = 5) -> Dict[str, Any]:
+    def article_sort_key(article: Article) -> Tuple[float, int]:
+        published = article.published_date
+        article_id = getattr(article, "id", 0)
+        numeric_id = article_id if isinstance(article_id, int) else 0
+        if published is None:
+            return (float("-inf"), numeric_id)
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        return (published.timestamp(), numeric_id)
+
+    recent_articles = sorted(event.articles or [], key=article_sort_key, reverse=True)
     return {
         "id": event.id,
         "name": event.name,
         "description": event.description,
         "last_article_at": event.last_article_at.isoformat() if event.last_article_at else None,
-        "recent_titles": [a.title for a in (event.articles or [])[:max_titles] if a.title],
+        "recent_titles": [a.title for a in recent_articles[:max_titles] if a.title],
     }
 
 
@@ -264,6 +275,7 @@ def _apply_live(
                     counts["uncategorized"] += 1
                     article.grouped_at = now
                     article.proposed_event_name = None
+                    article.importance_score = float(a.get("importance_score") or 0.5)
                     article.grouping_confidence = float(a.get("confidence") or 0.0)
                 else:
                     counts["errors"] += 1
@@ -279,6 +291,7 @@ async def assign_new_articles(
     *,
     create_new_events: bool = False,
     on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
+    summary_llm: Optional[ChatOpenAI] = None,
 ) -> Dict[str, int]:
     articles = fetch_ungrouped_articles(
         limit=app_config.LIVE_GROUP_MAX_ARTICLES,
@@ -343,23 +356,150 @@ async def assign_new_articles(
         for ev_id, ids in applied_increments.items():
             event_increments[ev_id].extend(ids)
 
-    if event_increments:
-        if on_event_increments is not None:
-            await on_event_increments(dict(event_increments))
-        else:
-            from .summary_service import generate_summary_update
-            for event_id, new_ids in event_increments.items():
-                try:
-                    await asyncio.wait_for(
-                        generate_summary_update(event_id, new_ids, llm),
-                        timeout=SUMMARY_GUARD_TIMEOUT,
-                    )
-                except asyncio.TimeoutError:
-                    logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
-                except Exception as e:
-                    logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
-
+    await _process_event_increments(
+        dict(event_increments),
+        on_event_increments=on_event_increments,
+        summary_llm=summary_llm,
+    )
     return counts
+
+
+async def assign_new_articles_with_jev(
+    classifier: Any,
+    *,
+    on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
+    summary_llm: Optional[ChatOpenAI] = None,
+) -> Dict[str, int]:
+    articles = fetch_ungrouped_articles(
+        limit=app_config.LIVE_GROUP_MAX_ARTICLES,
+        window_hours=app_config.LIVE_GROUP_WINDOW_HOURS,
+    )
+    if not articles:
+        logger.info(f"JEV GROUPING: no ungrouped articles in last {app_config.LIVE_GROUP_WINDOW_HOURS}h window")
+        return {
+            "existing": 0,
+            "new": 0,
+            "uncategorized": 0,
+            "errors": 0,
+            "provider_errors": 0,
+            "timed_out": 0,
+            "circuit_open": 0,
+            "degraded": 0,
+            "skipped": 1,
+        }
+
+    active, cooling = fetch_active_events()
+    event_payload = [_event_summary_for_prompt(event) for event in active + cooling]
+    article_payload = [_article_for_prompt(article) for article in articles]
+    classification_tasks = [
+        asyncio.create_task(classifier.classify(article, event_payload))
+        for article in article_payload
+    ]
+    pending = set(classification_tasks)
+    try:
+        _done, pending = await asyncio.wait(
+            classification_tasks,
+            timeout=app_config.JEV_BATCH_TIMEOUT_SECONDS,
+        )
+    except BaseException:
+        for task in classification_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*classification_tasks, return_exceptions=True)
+        raise
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    results: List[Any] = []
+    for task in classification_tasks:
+        if task in pending:
+            results.append(asyncio.TimeoutError("Jev live grouping batch deadline exceeded"))
+            continue
+        try:
+            results.append(task.result())
+        except BaseException as exc:
+            results.append(exc)
+
+    assignments: List[Dict[str, Any]] = []
+    provider_errors = 0
+    timed_out = 0
+    circuit_rejections = 0
+    logged_errors = 0
+    for article, result in zip(article_payload, results):
+        if isinstance(result, BaseException):
+            provider_errors += 1
+            if isinstance(result, asyncio.TimeoutError):
+                timed_out += 1
+            if type(result).__name__ == "JevCircuitOpenError":
+                circuit_rejections += 1
+            elif logged_errors < 5:
+                logged_errors += 1
+                logger.error(
+                    f"JEV GROUPING: article {article['id']} classification failed: {result}",
+                    exc_info=(type(result), result, result.__traceback__),
+                )
+            continue
+        assignments.append(result)
+
+    circuit_open = int(
+        bool(circuit_rejections)
+        or (hasattr(classifier, "circuit_open") and await classifier.circuit_open())
+    )
+    counts: Dict[str, int] = {
+        "existing": 0,
+        "new": 0,
+        "uncategorized": 0,
+        "errors": provider_errors,
+        "provider_errors": provider_errors,
+        "timed_out": timed_out,
+        "circuit_open": circuit_open,
+        "degraded": int(provider_errors > 0),
+        "skipped": 0,
+    }
+    event_increments: Dict[int, List[int]] = {}
+    if assignments:
+        applied_counts, event_increments = _apply_live(assignments, create_new_events=False)
+        counts["existing"] += applied_counts.get("existing", 0)
+        counts["uncategorized"] += applied_counts.get("uncategorized", 0)
+        counts["errors"] += applied_counts.get("errors", 0)
+
+    await _process_event_increments(
+        event_increments,
+        on_event_increments=on_event_increments,
+        summary_llm=summary_llm,
+    )
+    logger.info(f"JEV GROUPING: classified {len(articles)} articles with result {counts}")
+    return counts
+
+
+async def _process_event_increments(
+    event_increments: Dict[int, List[int]],
+    *,
+    on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]],
+    summary_llm: Optional[ChatOpenAI],
+) -> None:
+    if not event_increments:
+        return
+    if on_event_increments is not None:
+        await on_event_increments(event_increments)
+        return
+    if summary_llm is None:
+        logger.warning("GROUPING: summary updates skipped because no summary LLM is available")
+        return
+
+    from .summary_service import generate_summary_update
+    for event_id, new_ids in event_increments.items():
+        try:
+            await asyncio.wait_for(
+                generate_summary_update(event_id, new_ids, summary_llm),
+                timeout=SUMMARY_GUARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
+        except Exception as e:
+            logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
 
 async def _agenerate_with_retry(llm: ChatOpenAI, messages: List[HumanMessage]) -> Any:
@@ -441,7 +581,9 @@ async def _assign_chunk(
 async def regroup_uncategorized(
     llm: ChatOpenAI,
     *,
+    summary_llm: Optional[ChatOpenAI] = None,
     on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
+    on_new_events: Optional[Callable[[List[int]], Awaitable[None]]] = None,
 ) -> Dict[str, int]:
     articles = fetch_ungrouped_articles(
         limit=100,
@@ -513,40 +655,33 @@ async def regroup_uncategorized(
         for ev_id, new_ids in chunk_increments.items():
             event_increments[ev_id].extend(new_ids)
 
-    from .summary_service import (
-        generate_initial_summary,
-        generate_summary_update,
-    )
     new_event_ids_set = set(all_new_event_ids)
-    for new_event_id in all_new_event_ids:
-        try:
-            await asyncio.wait_for(
-                generate_initial_summary(new_event_id, llm),
-                timeout=SUMMARY_GUARD_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Auto-initial summary timed out for event {new_event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
-        except Exception as e:
-            logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
+    if all_new_event_ids:
+        if on_new_events is not None:
+            await on_new_events(all_new_event_ids)
+        else:
+            from .summary_service import generate_initial_summary
+            initial_summary_llm = summary_llm or llm
+            for new_event_id in all_new_event_ids:
+                try:
+                    await asyncio.wait_for(
+                        generate_initial_summary(new_event_id, initial_summary_llm),
+                        timeout=SUMMARY_GUARD_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Auto-initial summary timed out for event {new_event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
+                except Exception as e:
+                    logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
     queued_increments = {
         event_id: new_ids
         for event_id, new_ids in event_increments.items()
         if event_id not in new_event_ids_set
     }
-    if queued_increments:
-        if on_event_increments is not None:
-            await on_event_increments(queued_increments)
-        else:
-            for event_id, new_ids in queued_increments.items():
-                try:
-                    await asyncio.wait_for(
-                        generate_summary_update(event_id, new_ids, llm),
-                        timeout=SUMMARY_GUARD_TIMEOUT,
-                    )
-                except asyncio.TimeoutError:
-                    logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
-                except Exception as e:
-                    logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
+    await _process_event_increments(
+        queued_increments,
+        on_event_increments=on_event_increments,
+        summary_llm=summary_llm or llm,
+    )
 
     dedup_counts: Dict[str, int] = {}
     try:
@@ -622,6 +757,7 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                 elif decision == "uncategorized":
                     counts["uncategorized"] += 1
                     article.proposed_event_name = None
+                    article.importance_score = float(a.get("importance_score") or 0.5)
                     article.grouping_confidence = float(a.get("confidence") or 0.0)
                     article.grouped_at = now
                 else:

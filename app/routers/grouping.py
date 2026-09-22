@@ -50,10 +50,7 @@ async def run_grouping(
     request: Request,
     db: SQLAlchemySession = Depends(database.get_db),
 ):
-    try:
-        llm = get_llm_grouping(request)
-    except HTTPException:
-        raise
+    llm = getattr(request.app.state, "llm_grouping_instance", None)
     result = await tasks.run_grouping(llm, create_new_events=False)
     return {"status": "ok", **result}
 

@@ -30,6 +30,16 @@ class SchedulerLockTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(fetch_task, grouping_task)
             run_grouping.assert_awaited_once_with(create_new_events=False)
 
+    async def test_live_grouping_runs_with_jev_key_without_openai_key(self):
+        with patch.object(tasks.app_config, "OPENAI_API_KEY", None), patch.object(
+            tasks.app_config, "JEV_ENABLED", True
+        ), patch.object(tasks.app_config, "JEV_API_KEY", "zen-key"), patch.object(
+            tasks, "run_grouping", new=AsyncMock(return_value={"existing": 1})
+        ) as run_grouping:
+            await tasks.scheduled_live_grouping()
+
+        run_grouping.assert_awaited_once_with(create_new_events=False)
+
     async def test_regroup_waits_for_rss_fetch_instead_of_dropping_run(self):
         started = asyncio.Event()
         release = asyncio.Event()

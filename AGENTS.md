@@ -46,15 +46,17 @@ docker build -t fathom-stories:local .
 
 ```bash
 docker ps --filter name=fathom-stories
-docker logs --tail 50 -f fathom-stories
+docker logs --tail 50 -f fathom-stories-app-1
 ```
 
 **Bind mounts** (from `docker-compose.yml`):
 
-- `./data` → `/app/data` — SQLite database persists across rebuilds.
-- `./logs` → `/app/logs` — log files persist across rebuilds.
+- `/home/thankfulcarp/fathom-stories-local/data` → `/app/data` — authoritative production SQLite data.
+- `/home/thankfulcarp/fathom-stories-local/logs` → `/app/logs` — production logs.
 
-The application code and frontend are **baked into the image** at build time, so a rebuild is required after every code change. The `.env` file is read from the repo root via `env_file:`; restart the container after editing it.
+Do not replace these with repo-relative paths during Arcane deployment; the repository's `data/stories.db` and `/home/thankfulcarp/fathom-stories/data/stories.db` are stale copies.
+
+The application code and frontend are **baked into the image** at build time, so a rebuild is required after every code change. Arcane stores the production environment as protected project configuration.
 
 ## Legacy: systemd user unit
 
@@ -173,17 +175,20 @@ The event bar uses one of two sort modes, both per-browser-overridable via 6 sli
 
 **Live assigner** runs after each fetch:
 - Pulls ungrouped articles (`event_id IS NULL` AND `published_date >= now() - LIVE_GROUP_WINDOW_HOURS`, default 24h)
-- Caps at `LIVE_GROUP_MAX_ARTICLES` (default 100) and batches at `LIVE_GROUP_BATCH_SIZE` (default 20) per LLM call to stay under provider context windows
-- Articles older than `LIVE_GROUP_WINDOW_HOURS` are intentionally left untouched in the DB (existing 30-day cleanup handles them); they are not deleted
-- Sends: list of articles + active events + 5 most recent `GroupingFeedback` rows
-- LLM returns per-article decision: existing | uncategorized + importance_score
-- On a per-batch `OpenAIContextOverflowError` (or `context_length_exceeded` in the error message), retries that batch once with `snippet_chars=200` instead of 500
-- Apply decisions in a single transaction (live pass never creates events)
+- Caps at `LIVE_GROUP_MAX_ARTICLES` per tick
+- With `JEV_ENABLED=true`, sends each article independently to OpenCode Zen SystemOne (`jev-1.13`) with a bounded list of active/cooling event choices plus `none`
+- One Jev request returns both the destination choice and an importance band; only destination confidence at or above `JEV_MIN_CONFIDENCE` is assigned to an existing event
+- `none` and low-confidence choices stay ungrouped, are marked processed, and flow into the periodic full-model regroup pass
+- Provider failures leave the article unprocessed so a later live pass can retry
+- `JEV_MAX_EVENT_CANDIDATES` and `JEV_MAX_REQUEST_BYTES` keep each request conservatively within Jev's 32k context window; candidates are relevance-ranked and trimmed to fit
+- With `JEV_ENABLED=false`, the prior batched full-LLM live assigner remains available as a fallback
+- Articles older than `LIVE_GROUP_WINDOW_HOURS` are intentionally left untouched in the DB; they are not deleted
 
-**Hourly regrouper** runs as `regroup_uncategorized`:
-- Pulls ungrouped articles (up to 100) + active + recently-archived events
-- Sends full context to LLM, gets back per-article decision: existing | new | uncategorized
+**Periodic regrouper** runs as `regroup_uncategorized`:
+- Pulls up to 100 ungrouped articles, including articles that Jev marked as `none` or low-confidence
+- Uses the full grouping LLM to match existing events or propose shared names for new events
 - 2+ articles sharing a new name create a fresh Event
+- New-event summaries and incremental summary updates use the summary LLM lane, not the grouping LLM
 - **Followed by an LLM dedup pass** over all active events to merge semantic duplicates (confidence threshold 0.7)
 
 **Distinct-source rule** (toggle: `REQUIRE_DISTINCT_SOURCES`, default `true`):

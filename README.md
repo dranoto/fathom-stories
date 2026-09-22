@@ -19,10 +19,11 @@ The scraper, RSS pipeline, and bypass-paywalls Chrome extension are reused **ver
 
 ## Quick start (Docker, recommended)
 
-The app runs as a single `docker compose` service. The SQLite database, logs,
-and configuration are all bind-mounted from the project directory, so you can
-edit code, back up `data/stories.db`, or swap `.env` settings without rebuilding
-the image.
+The app runs as a single `docker compose` service. The canonical production
+Compose file uses absolute host bind mounts so Arcane always attaches the current
+database at `/home/thankfulcarp/fathom-stories-local/data/stories.db` and the
+matching logs directory. Application code is baked into the image; configuration
+is supplied by Arcane's protected project environment.
 
 ```bash
 cp .env.example .env
@@ -57,6 +58,21 @@ All knobs live in `.env`. Restart the container (`docker compose restart app`) a
 | `DEFAULT_SUMMARY_MODEL_NAME` | `FreeOnly` | Per-event summary model |
 | `DEFAULT_GROUPING_MODEL_NAME` | `FreeOnly` | Live grouping + recluster model |
 | `DEFAULT_CHAT_MODEL_NAME` | `FreeOnly` | Per-event chat model |
+| `SUMMARY_MAX_OUTPUT_TOKENS` | `16384` | Summary output budget, including hidden reasoning tokens |
+| `SUMMARY_REASONING_EFFORT` | `medium` | Deliberation level for event summaries |
+| `GROUPING_REASONING_EFFORT` | `none` | Keeps grouping JSON reliable on reasoning-capable models |
+| `JEV_ENABLED` | `false` | Use Jev for one-article live classification; falls back to the grouping LLM if unavailable |
+| `OPENCODE_ZEN_API_KEY` | (none) | OpenCode Zen credential used by Jev |
+| `JEV_ENDPOINT` | `https://opencode.ai/zen/v1/systemone` | SystemOne endpoint |
+| `JEV_MODEL` | `jev-1.13` | Jev model identifier |
+| `JEV_TIMEOUT_SECONDS` | `10` | Per-article provider timeout |
+| `JEV_MIN_CONFIDENCE` | `0.90` | Minimum confidence for assignment to an existing event |
+| `JEV_MAX_CONCURRENCY` | `8` | Maximum simultaneous Jev requests |
+| `JEV_MAX_EVENT_CANDIDATES` | `80` | Relevance-ranked event candidates per article |
+| `JEV_MAX_REQUEST_BYTES` | `28000` | Serialized UTF-8 request ceiling below the 32k context window |
+| `JEV_FAILURE_THRESHOLD` | `8` | Consecutive provider failures before the circuit opens |
+| `JEV_CIRCUIT_COOLDOWN_SECONDS` | `300` | Circuit cooldown retained across live runs in the process |
+| `JEV_BATCH_TIMEOUT_SECONDS` | `120` | Classification-phase deadline for a live pass |
 | `RSS_FEED_URLS` | (none) | Comma-separated feed URLs or JSON list |
 | `DEFAULT_RSS_FETCH_INTERVAL_MINUTES` | `60` | Fetch cadence |
 | `LIVE_GROUPING_INTERVAL_MINUTES` | `60` | Assign new articles to existing events; new-event proposals wait for regroup |
