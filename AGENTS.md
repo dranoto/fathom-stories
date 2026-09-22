@@ -58,6 +58,8 @@ Do not replace these with repo-relative paths during Arcane deployment; the repo
 
 The application code and frontend are **baked into the image** at build time, so a rebuild is required after every code change. Arcane stores the production environment as protected project configuration.
 
+Summary updates are coalesced per event and flushed after each hourly live-grouping pass and each six-hour regroup pass. Retry work is durable in the `pending_summary_updates` SQLite table; do not remove or bypass that table when changing summary scheduling.
+
 ## Legacy: systemd user unit
 
 `~/.config/systemd/user/fathom-stories.service` is preserved for reference but **disabled**. The Docker container is the canonical deployment.
@@ -181,6 +183,7 @@ The event bar uses one of two sort modes, both per-browser-overridable via 6 sli
 - `none` and low-confidence choices stay ungrouped, are marked processed, and flow into the periodic full-model regroup pass
 - Provider failures leave the article unprocessed so a later live pass can retry
 - `JEV_MAX_EVENT_CANDIDATES` and `JEV_MAX_REQUEST_BYTES` keep each request conservatively within Jev's 32k context window; candidates are relevance-ranked and trimmed to fit
+- Existing-event assignments are coalesced by event for the whole live pass, then incremental summaries are flushed before the hourly job returns
 - With `JEV_ENABLED=false`, the prior batched full-LLM live assigner remains available as a fallback
 - Articles older than `LIVE_GROUP_WINDOW_HOURS` are intentionally left untouched in the DB; they are not deleted
 
@@ -188,7 +191,7 @@ The event bar uses one of two sort modes, both per-browser-overridable via 6 sli
 - Pulls up to 100 ungrouped articles, including articles that Jev marked as `none` or low-confidence
 - Uses the full grouping LLM to match existing events or propose shared names for new events
 - 2+ articles sharing a new name create a fresh Event
-- New-event summaries and incremental summary updates use the summary LLM lane, not the grouping LLM
+- New-event summaries and incremental summary updates use the summary LLM lane, not the grouping LLM; all pending incremental updates are flushed before regroup returns
 - **Followed by an LLM dedup pass** over all active events to merge semantic duplicates (confidence threshold 0.7)
 
 **Distinct-source rule** (toggle: `REQUIRE_DISTINCT_SOURCES`, default `true`):

@@ -14,6 +14,7 @@ class DatabaseSchemaTests(unittest.TestCase):
         try:
             Base.metadata.create_all(engine)
             inspector = inspect(engine)
+            table_names = set(inspector.get_table_names())
             article_indexes = {index["name"] for index in inspector.get_indexes("articles")}
             read_indexes = {index["name"] for index in inspector.get_indexes("article_reads")}
         finally:
@@ -21,6 +22,7 @@ class DatabaseSchemaTests(unittest.TestCase):
 
         self.assertIn("ix_articles_event_published", article_indexes)
         self.assertIn("ix_article_reads_visitor_article", read_indexes)
+        self.assertIn("pending_summary_updates", table_names)
 
     def test_existing_database_receives_missing_indexes(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -102,6 +102,28 @@ class EventSummary(Base):
         return f"<EventSummary(id={self.id}, event_id={self.event_id}, article_count={self.article_count})>"
 
 
+class PendingSummaryUpdate(Base):
+    __tablename__ = "pending_summary_updates"
+
+    event_id = Column(
+        Integer,
+        ForeignKey("events.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    article_id = Column(
+        Integer,
+        ForeignKey("articles.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    queued_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<PendingSummaryUpdate(event_id={self.event_id}, "
+            f"article_id={self.article_id})>"
+        )
+
+
 class GroupingFeedback(Base):
     __tablename__ = "grouping_feedback"
 

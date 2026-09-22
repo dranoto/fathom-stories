@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from .models import (
     Base, FeedSource, Article, Event, EventSummary,
     GroupingFeedback, ReclusterProposal, ArticleRead, KVSetting, ScrapeFailure,
-    EventChatMessage,
+    EventChatMessage, PendingSummaryUpdate,
 )
 from .. import config as app_config
 
@@ -123,6 +123,7 @@ __all__ = [
     "Article",
     "Event",
     "EventSummary",
+    "PendingSummaryUpdate",
     "GroupingFeedback",
     "ReclusterProposal",
     "ArticleRead",

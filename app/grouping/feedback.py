@@ -18,18 +18,37 @@ def record_correction(
     note: Optional[str] = None,
 ) -> None:
     with db_session_scope() as db:
-        fb = GroupingFeedback(
+        record_correction_in_session(
+            db,
             article_id=article_id,
+            kind=kind,
             original_event_id=original_event_id,
             corrected_event_id=corrected_event_id,
-            kind=kind,
             note=note,
         )
-        db.add(fb)
     logger.info(
         f"GROUPING_FEEDBACK: recorded {kind} for article_id={article_id} "
         f"({original_event_id} -> {corrected_event_id})"
     )
+
+
+def record_correction_in_session(
+    db: Session,
+    article_id: int,
+    kind: str,
+    original_event_id: Optional[int] = None,
+    corrected_event_id: Optional[int] = None,
+    note: Optional[str] = None,
+) -> GroupingFeedback:
+    feedback = GroupingFeedback(
+        article_id=article_id,
+        original_event_id=original_event_id,
+        corrected_event_id=corrected_event_id,
+        kind=kind,
+        note=note,
+    )
+    db.add(feedback)
+    return feedback
 
 
 def build_few_shot_examples(limit: int = 5) -> List[Dict[str, Any]]:

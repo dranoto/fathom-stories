@@ -10,7 +10,7 @@ The scraper, RSS pipeline, and bypass-paywalls Chrome extension are reused **ver
 - Scrapes full text using Playwright + the bypass-paywalls extension (same as Fathom)
 - LLM auto-assigns each new article to an existing event, a new event, or "uncategorized"
 - LLM also scores each article's importance (0-1) for bubble size in the timeline
-- Per-event summary updates are debounced and coalesced per event instead of regenerated once per hourly pass
+- Each hourly live-grouping pass coalesces its articles by event, then updates affected summaries before returning; regroup does the same after its full pass. Failed summary work is persisted in SQLite and restored after restart.
 - Default UI layout includes a dedicated **New & updated** strip before the ranked event list
 - Move/remove from event, with corrections fed back to the LLM as few-shot examples
 - Daily recluster: surfaces merge/split/revive candidates (currently write-only, no UI)
@@ -77,7 +77,7 @@ All knobs live in `.env`. Restart the container (`docker compose restart app`) a
 | `DEFAULT_RSS_FETCH_INTERVAL_MINUTES` | `60` | Fetch cadence |
 | `LIVE_GROUPING_INTERVAL_MINUTES` | `60` | Assign new articles to existing events; new-event proposals wait for regroup |
 | `REGROUP_INTERVAL_HOURS` | `6` | Expensive regroup cadence that may form cross-source events |
-| `SUMMARY_DEBOUNCE_MINUTES` | `20` | Coalesce summary changes for the same event before one LLM call |
+| `SUMMARY_DEBOUNCE_MINUTES` | `20` | Bounded first-item coalescing window for isolated/manual updates; live grouping and regroup explicitly flush before returning |
 | `LIVE_GROUP_WINDOW_HOURS` | `24` | Live pass only considers newly fetched, ungrouped articles published within this window |
 | `LIVE_GROUP_MAX_ARTICLES` | `200` | Per-tick cap on ungrouped articles fed to the live LLM |
 | `LIVE_GROUP_BATCH_SIZE` | `50` | Articles per individual live-grouping LLM call |

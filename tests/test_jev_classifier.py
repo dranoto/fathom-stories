@@ -1,10 +1,14 @@
 import asyncio
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from app import tasks
-from app.database.models import Article, Event
+from app.database.models import Article, Base, Event
 from app.grouping import engine
 from app.grouping.jev_classifier import (
     JevCircuitOpenError,
@@ -264,6 +268,9 @@ class JevTaskRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_live_grouping_uses_jev_without_full_grouping_llm(self):
         classifier_instance = MagicMock()
+        queue = MagicMock()
+        queue.flush = AsyncMock()
+        tasks.summary_queue = queue
         expected = {"existing": 1, "errors": 0}
         with patch.object(tasks.app_config, "JEV_ENABLED", True), patch.object(
             tasks, "_get_jev_classifier", return_value=classifier_instance
@@ -278,11 +285,40 @@ class JevTaskRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, expected)
         grouping_llm.assert_not_called()
+        queue.flush.assert_awaited_once_with()
         assign.assert_awaited_once_with(
             classifier_instance,
-            on_event_increments=None,
-            summary_llm="summary-llm",
+            on_event_increments=queue.enqueue,
+            summary_llm=None,
         )
+
+    async def test_live_grouping_waits_for_summary_flush_before_returning(self):
+        queue = MagicMock()
+        flush_started = asyncio.Event()
+        release_flush = asyncio.Event()
+
+        async def wait_for_release():
+            flush_started.set()
+            await release_flush.wait()
+
+        queue.flush = AsyncMock(side_effect=wait_for_release)
+        tasks.summary_queue = queue
+        expected = {"existing": 2, "errors": 0}
+        with patch.object(tasks.app_config, "JEV_ENABLED", True), patch.object(
+            tasks, "_get_jev_classifier", return_value=MagicMock()
+        ), patch.object(
+            tasks.grouping_engine,
+            "assign_new_articles_with_jev",
+            new=AsyncMock(return_value=expected),
+        ):
+            grouping_task = asyncio.create_task(tasks.run_grouping())
+            await flush_started.wait()
+            self.assertFalse(grouping_task.done())
+            release_flush.set()
+            result = await grouping_task
+
+        self.assertEqual(result, expected)
+        queue.flush.assert_awaited_once_with()
 
     async def test_missing_jev_key_falls_back_to_full_grouping_llm(self):
         expected = {"existing": 1, "errors": 0}
@@ -308,6 +344,14 @@ class JevTaskRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_regroup_routes_new_event_summaries_through_summary_queue(self):
         queue = MagicMock()
         queue.summarize_initial = AsyncMock()
+        flush_started = asyncio.Event()
+        release_flush = asyncio.Event()
+
+        async def wait_for_release():
+            flush_started.set()
+            await release_flush.wait()
+
+        queue.flush = AsyncMock(side_effect=wait_for_release)
         tasks.summary_queue = queue
         expected = {"new_events": 1}
         with patch.object(tasks, "_get_grouping_llm", return_value="grouping-llm"), patch.object(
@@ -315,13 +359,141 @@ class JevTaskRoutingTests(unittest.IsolatedAsyncioTestCase):
             "regroup_uncategorized",
             new=AsyncMock(return_value=expected),
         ) as regroup:
-            result = await tasks.run_regroup()
+            regroup_task = asyncio.create_task(tasks.run_regroup())
+            await flush_started.wait()
+            self.assertFalse(regroup_task.done())
+            release_flush.set()
+            result = await regroup_task
 
         self.assertEqual(result, expected)
+        queue.flush.assert_awaited_once_with()
         kwargs = regroup.await_args.kwargs
         self.assertEqual(kwargs["summary_llm"], None)
         self.assertIs(kwargs["on_new_events"], queue.summarize_initial)
-        self.assertIs(kwargs["on_event_increments"], tasks.enqueue_summary_updates)
+        self.assertIs(kwargs["on_event_increments"], queue.enqueue)
+
+    async def test_grouping_uses_captured_queue_when_global_is_replaced(self):
+        first_queue = MagicMock()
+        first_queue.enqueue = AsyncMock(return_value=1)
+        first_queue.flush = AsyncMock()
+        replacement_queue = MagicMock()
+        tasks.summary_queue = first_queue
+
+        async def assign_with_callback(_classifier, *, on_event_increments, summary_llm):
+            tasks.summary_queue = replacement_queue
+            await on_event_increments({7: [101]})
+            return {"existing": 1, "errors": 0}
+
+        with patch.object(tasks.app_config, "JEV_ENABLED", True), patch.object(
+            tasks, "_get_jev_classifier", return_value=MagicMock()
+        ), patch.object(
+            tasks.grouping_engine,
+            "assign_new_articles_with_jev",
+            new=AsyncMock(side_effect=assign_with_callback),
+        ):
+            result = await tasks.run_grouping()
+
+        self.assertEqual(result["existing"], 1)
+        first_queue.enqueue.assert_awaited_once_with({7: [101]})
+        first_queue.flush.assert_awaited_once_with()
+        replacement_queue.enqueue.assert_not_called()
+
+    async def test_shutdown_waits_for_grouping_then_drains_captured_queue(self):
+        queue = MagicMock()
+        queue.shutdown = AsyncMock()
+        tasks.summary_queue = queue
+        lock_acquired = asyncio.Event()
+        release = asyncio.Event()
+
+        async def hold_grouping_lock():
+            async with tasks.grouping_lock:
+                lock_acquired.set()
+                await release.wait()
+
+        holder = asyncio.create_task(hold_grouping_lock())
+        await lock_acquired.wait()
+        shutdown = asyncio.create_task(tasks.shutdown_summary_queue())
+        await asyncio.sleep(0)
+        queue.shutdown.assert_not_awaited()
+
+        release.set()
+        await asyncio.gather(holder, shutdown)
+
+        queue.shutdown.assert_awaited_once_with()
+        self.assertIsNone(tasks.summary_queue)
+
+    async def test_manual_enqueue_persists_when_queue_is_detached(self):
+        tasks.summary_queue = None
+        with patch.object(tasks, "persist_summary_updates", return_value=2) as persist:
+            queued = await tasks.enqueue_summary_updates({7: [101, 102]})
+
+        self.assertEqual(queued, 2)
+        persist.assert_called_once_with({7: [101, 102]})
+
+
+class RegroupSummaryRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_initial_summary_is_queued_for_retry(self):
+        test_engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(test_engine)
+        session_factory = sessionmaker(bind=test_engine, expire_on_commit=False)
+
+        @contextmanager
+        def test_scope():
+            db = session_factory()
+            try:
+                yield db
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+
+        with test_scope() as db:
+            db.add(Event(id=99, name="New event", status="active"))
+            db.add(Article(id=42, url="https://example.com/42", event_id=99))
+
+        response = MagicMock()
+        response.generations = [[MagicMock(text='{"assignments": []}')]]
+        on_new_events = AsyncMock(return_value=[99])
+        on_event_increments = AsyncMock(return_value=1)
+        counts = {
+            "existing": 0,
+            "new_events": 1,
+            "revived": 0,
+            "reused": 0,
+            "new_singletons": 0,
+            "uncategorized": 0,
+            "errors": 0,
+        }
+
+        with patch.object(engine, "fetch_ungrouped_articles", return_value=[object()]), patch.object(
+            engine, "fetch_active_events", return_value=([], [])
+        ), patch.object(engine, "_article_for_prompt", return_value=ARTICLE), patch.object(
+            engine, "build_few_shot_examples", return_value=[]
+        ), patch.object(engine, "build_few_shot_block", return_value=""), patch.object(
+            engine, "build_regroup_prompt", return_value="prompt"
+        ), patch.object(
+            engine, "_agenerate_with_retry", new=AsyncMock(return_value=response)
+        ), patch.object(engine, "parse_json_object", return_value={"assignments": []}), patch.object(
+            engine,
+            "_apply_regroup_inner",
+            return_value=(counts, ([99], {99: [42]})),
+        ), patch.object(
+            engine, "db_session_scope", new=test_scope
+        ), patch(
+            "app.grouping.dedup.dedup_events", new=AsyncMock(return_value={})
+        ):
+            result = await engine.regroup_uncategorized(
+                MagicMock(),
+                on_new_events=on_new_events,
+                on_event_increments=on_event_increments,
+            )
+
+        self.assertEqual(result["new_events"], 1)
+        on_new_events.assert_awaited_once_with([99])
+        on_event_increments.assert_awaited_once_with({99: [42]})
+        test_engine.dispose()
 
 
 class EventPromptTests(unittest.TestCase):

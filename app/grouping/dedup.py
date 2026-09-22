@@ -9,9 +9,11 @@ from langchain_openai import ChatOpenAI
 from sqlalchemy import desc
 
 from ..database import db_session_scope
-from ..database.models import Event, Article, EventSummary, GroupingFeedback
+from ..database.models import Event, Article, EventSummary
 from .. import config as app_config
+from .feedback import record_correction_in_session
 from .response_parser import parse_json_object
+from .summary_queue import persist_summary_updates_in_session
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,14 @@ def fetch_active_and_cooling_events() -> List[Event]:
         return events
 
 
-def merge_events(db, primary_id: int, secondary_id: int, kind: str = "dedup_merge", note: Optional[str] = None) -> bool:
+def merge_events(
+    db,
+    primary_id: int,
+    secondary_id: int,
+    kind: str = "dedup_merge",
+    note: Optional[str] = None,
+    summary_increments: Optional[Dict[int, List[int]]] = None,
+) -> bool:
     """
     Move all articles from secondary to primary, update primary's metadata, delete secondary.
     Records a GroupingFeedback row for audit. Returns True on success.
@@ -72,6 +81,15 @@ def merge_events(db, primary_id: int, secondary_id: int, kind: str = "dedup_merg
     for a in secondary_articles:
         a.event_id = primary_id
 
+    moved_article_ids = [int(a.id) for a in secondary_articles]
+    if moved_article_ids:
+        persist_summary_updates_in_session(
+            db,
+            {primary_id: moved_article_ids},
+        )
+        if summary_increments is not None:
+            summary_increments.setdefault(primary_id, []).extend(moved_article_ids)
+
     max_importance = max((a.importance_score for a in secondary_articles if a.importance_score is not None), default=0.5)
     from .lifecycle import reset_expiry_on_event
     reset_expiry_on_event(primary)
@@ -79,13 +97,15 @@ def merge_events(db, primary_id: int, secondary_id: int, kind: str = "dedup_merg
     primary.status = "active"
     primary.archived_at = None
 
-    db.add(GroupingFeedback(
-        article_id=0,
-        original_event_id=secondary_id,
-        corrected_event_id=primary_id,
-        kind=kind,
-        note=note or f"merged '{secondary.name}' into '{primary.name}'",
-    ))
+    if moved_article_ids:
+        record_correction_in_session(
+            db,
+            article_id=moved_article_ids[0],
+            original_event_id=secondary_id,
+            corrected_event_id=primary_id,
+            kind=kind,
+            note=note or f"merged '{secondary.name}' into '{primary.name}'",
+        )
 
     db.query(EventSummary).filter(EventSummary.event_id == secondary_id).delete(synchronize_session=False)
     db.delete(secondary)
@@ -93,7 +113,11 @@ def merge_events(db, primary_id: int, secondary_id: int, kind: str = "dedup_merg
     return True
 
 
-async def dedup_events(llm: ChatOpenAI) -> Dict[str, int]:
+async def dedup_events(
+    llm: ChatOpenAI,
+    *,
+    summary_increments: Optional[Dict[int, List[int]]] = None,
+) -> Dict[str, int]:
     """
     Run a post-regroup LLM dedup pass over all active+cooling events.
     Returns counts: {"checked": N, "merged": M, "skipped_low_confidence": K, "errors": E}.
@@ -143,7 +167,14 @@ async def dedup_events(llm: ChatOpenAI) -> Dict[str, int]:
                 logger.info(f"DEDUP: skipping pair ({older_id}, {newer_id}) — confidence {confidence:.2f} < {DEDUP_CONFIDENCE_THRESHOLD}")
                 skipped += 1
                 continue
-            if merge_events(db, older_id, newer_id, kind="dedup_merge", note=f"llm: {reason}"):
+            if merge_events(
+                db,
+                older_id,
+                newer_id,
+                kind="dedup_merge",
+                note=f"llm: {reason}",
+                summary_increments=summary_increments,
+            ):
                 event_id_set.discard(newer_id)
                 merged += 1
 

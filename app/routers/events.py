@@ -13,7 +13,14 @@ from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy import desc, func, and_, select
 
 from .. import database
-from ..database.models import Event, EventSummary, Article, ArticleRead, EventChatMessage
+from ..database.models import (
+    Event,
+    EventSummary,
+    Article,
+    ArticleRead,
+    EventChatMessage,
+    PendingSummaryUpdate,
+)
 from ..schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventDetailResponse,
     ArticleInEvent, EventSummaryResponse, EventSummaryData,
@@ -23,7 +30,7 @@ from ..schemas.event import (
 )
 from ..dependencies import get_llm_summary, get_llm_chat, get_visitor_id
 from ..security import verify_event_exists
-from ..grouping.feedback import record_correction
+from ..grouping.feedback import record_correction_in_session
 from ..grouping import lifecycle as lifecycle_module
 from ..grouping import chat as chat_module
 from .. import mcp_tools
@@ -32,6 +39,40 @@ from .. import config as app_config
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+
+
+def _persist_event_summary_regeneration(db, event_ids) -> Dict[int, List[int]]:
+    """Write durable summary work in the same transaction as a manual edit."""
+    from ..grouping.summary_queue import persist_summary_updates_in_session
+
+    increments: Dict[int, List[int]] = {}
+    for raw_event_id in dict.fromkeys(event_ids):
+        if raw_event_id is None:
+            continue
+        event_id = int(raw_event_id)
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if event is None:
+            continue
+        article_ids = [
+            row[0]
+            for row in db.query(Article.id)
+            .filter(Article.event_id == event_id)
+            .all()
+        ]
+        if article_ids:
+            increments[event_id] = article_ids
+        else:
+            db.query(PendingSummaryUpdate).filter(
+                PendingSummaryUpdate.event_id == event_id
+            ).delete(synchronize_session=False)
+            db.query(EventSummary).filter(
+                EventSummary.event_id == event_id
+            ).delete(synchronize_session=False)
+            event.summary_article_count = 0
+            event.last_summary_at = None
+
+    persist_summary_updates_in_session(db, increments)
+    return increments
 
 
 def _publisher_labels(rows) -> Dict[int, str]:
@@ -79,18 +120,6 @@ async def _queue_summary_regeneration(event_ids) -> None:
             logger.info(f"No summary regeneration queued for events {valid_ids}")
     except Exception as e:
         logger.error(f"Background summary regeneration failed for events {valid_ids}: {e}", exc_info=True)
-
-
-async def _regen_summary_after_move(event_id: int, article_id: int, llm) -> None:
-    try:
-        from .. import tasks
-        await tasks.enqueue_summary_updates({event_id: [article_id]})
-    except Exception as e:
-        logger.error(f"Background summary queue after move failed for event {event_id}: {e}", exc_info=True)
-
-
-async def _regen_summary_after_remove(event_id: int, llm) -> None:
-    logger.info(f"Article removed from event {event_id}; awaiting manual Regenerate click")
 
 
 @router.get("", response_model=List[EventResponse])
@@ -499,12 +528,18 @@ async def add_article_to_event(
     event.archived_at = None
     from ..grouping.lifecycle import reset_expiry_on_event
     reset_expiry_on_event(event)
-    record_correction(
+    record_correction_in_session(
+        db,
         article_id=article_id,
         kind="move",
         original_event_id=original,
         corrected_event_id=event_id,
     )
+    affected_event_ids = [event_id]
+    if original is not None and original != event_id:
+        affected_event_ids.append(original)
+    if not already_in:
+        _persist_event_summary_regeneration(db, affected_event_ids)
     try:
         db.commit()
     except Exception as e:
@@ -513,11 +548,7 @@ async def add_article_to_event(
         raise HTTPException(status_code=500, detail="Failed to add article to event")
 
     if not already_in:
-        try:
-            llm = get_llm_summary(request)
-            background_tasks.add_task(_regen_summary_after_move, event_id, article_id, llm)
-        except HTTPException:
-            pass
+        background_tasks.add_task(_queue_summary_regeneration, affected_event_ids)
 
     return {
         "message": "Article added to event" if not already_in else "Article already in event",
@@ -540,7 +571,8 @@ async def remove_article_from_event(
     article = db.query(Article).filter(Article.id == article_id, Article.event_id == event_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not in event")
-    record_correction(
+    record_correction_in_session(
+        db,
         article_id=article_id,
         kind="move",
         original_event_id=event_id,
@@ -561,6 +593,11 @@ async def remove_article_from_event(
     article.event_id = None
     article.grouped_at = datetime.now(timezone.utc)
     article.proposed_event_name = None
+    db.query(PendingSummaryUpdate).filter(
+        PendingSummaryUpdate.article_id == article_id
+    ).delete(synchronize_session=False)
+    if not disbanded:
+        _persist_event_summary_regeneration(db, [event_id])
     try:
         db.commit()
     except Exception as e:
@@ -569,7 +606,7 @@ async def remove_article_from_event(
         raise HTTPException(status_code=500, detail="Failed to remove article")
 
     if not disbanded:
-        logger.info(f"Article {article_id} removed from event {event_id}; awaiting manual Regenerate click")
+        background_tasks.add_task(_queue_summary_regeneration, [event_id])
 
     return {
         "message": "Article removed" + (" and event disbanded" if disbanded else ""),
@@ -652,7 +689,8 @@ async def move_article(
     else:
         raise HTTPException(status_code=400, detail="Provide target_event_id or new_event_name")
 
-    record_correction(
+    record_correction_in_session(
+        db,
         article_id=article_id,
         kind="move",
         original_event_id=event_id,
@@ -666,6 +704,7 @@ async def move_article(
         target_ev = db.query(Event).filter(Event.id == target_id).first()
         if target_ev is not None:
             reset_expiry_on_event(target_ev)
+    _persist_event_summary_regeneration(db, [event_id, target_id])
     try:
         db.commit()
     except Exception as e:
@@ -698,14 +737,25 @@ async def merge_events(
         raise HTTPException(status_code=400, detail="Cannot merge event into itself")
     primary = verify_event_exists(db, event_id)
     secondary = verify_event_exists(db, other_id)
+    feedback_article = (
+        db.query(Article.id)
+        .filter(Article.event_id == other_id)
+        .order_by(Article.id)
+        .first()
+    )
     db.query(Article).filter(Article.event_id == other_id).update(
         {Article.event_id: event_id}, synchronize_session=False
     )
-    record_correction(
-        article_id=0, kind="merge",
-        original_event_id=other_id, corrected_event_id=event_id,
-        note=body.note or f"merged '{secondary.name}' into '{primary.name}'",
-    )
+    _persist_event_summary_regeneration(db, [event_id])
+    if feedback_article is not None:
+        record_correction_in_session(
+            db,
+            article_id=int(feedback_article[0]),
+            kind="merge",
+            original_event_id=other_id,
+            corrected_event_id=event_id,
+            note=body.note or f"merged '{secondary.name}' into '{primary.name}'",
+        )
     try:
         db.delete(secondary)
         db.commit()
@@ -729,15 +779,17 @@ async def split_event(
         raise HTTPException(status_code=400, detail="article_ids required")
     if not body.new_event_name.strip():
         raise HTTPException(status_code=400, detail="new_event_name required")
-    new_ev = Event(name=body.new_event_name.strip(), status="active")
-    db.add(new_ev)
-    db.flush()
-    from ..grouping.lifecycle import reset_expiry, reset_expiry_on_event
     split_articles = (
         db.query(Article)
         .filter(Article.id.in_(body.article_ids), Article.event_id == event_id)
         .all()
     )
+    if not split_articles:
+        raise HTTPException(status_code=400, detail="No requested articles belong to this event")
+    new_ev = Event(name=body.new_event_name.strip(), status="active")
+    db.add(new_ev)
+    db.flush()
+    from ..grouping.lifecycle import reset_expiry, reset_expiry_on_event
     for art in split_articles:
         reset_expiry_on_event(new_ev)
     if split_articles:
@@ -750,9 +802,13 @@ async def split_event(
     db.query(Article).filter(Article.id.in_(body.article_ids), Article.event_id == event_id).update(
         {Article.event_id: new_ev.id}, synchronize_session=False
     )
-    record_correction(
-        article_id=0, kind="split",
-        original_event_id=event_id, corrected_event_id=new_ev.id,
+    _persist_event_summary_regeneration(db, [event_id, new_ev.id])
+    record_correction_in_session(
+        db,
+        article_id=int(split_articles[0].id),
+        kind="split",
+        original_event_id=event_id,
+        corrected_event_id=new_ev.id,
         note=body.note or f"split out '{new_ev.name}' from '{parent.name}'",
     )
     try:

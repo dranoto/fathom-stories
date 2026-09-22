@@ -11,7 +11,7 @@ from .grouping import engine as grouping_engine
 from .grouping import recluster as recluster_module
 from .grouping import lifecycle as lifecycle_module
 from .summarizer import initialize_llm
-from .grouping.summary_queue import build_summary_queue
+from .grouping.summary_queue import build_summary_queue, persist_summary_updates
 from .grouping.jev_classifier import JevClassifier
 
 logger = logging.getLogger(__name__)
@@ -24,20 +24,36 @@ jev_classifier = None
 
 def configure_summary_queue(llm) -> None:
     global summary_queue
-    summary_queue = build_summary_queue(llm) if llm else None
+    if llm is None:
+        summary_queue = None
+    elif summary_queue is None:
+        summary_queue = build_summary_queue(llm)
+    else:
+        # Keep the queue object stable so in-flight grouping callbacks and their
+        # eventual flush always address the same pending work.
+        summary_queue.llm = llm
 
 
 async def shutdown_summary_queue() -> None:
     global summary_queue
-    if summary_queue is not None:
-        await summary_queue.shutdown()
+    # The scheduler cancels its jobs before this is called. Waiting for the
+    # grouping lock closes the remaining enqueue/drain race with an in-flight
+    # grouping or regroup pass.
+    async with grouping_lock:
+        active_summary_queue = summary_queue
         summary_queue = None
+        if active_summary_queue is not None:
+            await active_summary_queue.shutdown()
 
 
 async def enqueue_summary_updates(event_increments) -> int:
-    if summary_queue is None:
-        return 0
-    return await summary_queue.enqueue(event_increments)
+    active_summary_queue = summary_queue
+    if active_summary_queue is None:
+        # Manual/background callers can race application shutdown. Persist the
+        # work even after the in-memory queue is detached so the next process
+        # restores and retries it.
+        return persist_summary_updates(event_increments)
+    return await active_summary_queue.enqueue(event_increments)
 
 
 def seed_feeds_from_env() -> None:
@@ -126,28 +142,39 @@ async def run_grouping(llm=None, *, create_new_events: bool = False) -> dict:
     if grouping_lock.locked():
         return {"skipped": 1, "reason": "grouping already running"}
     async with grouping_lock:
-        increment_handler = enqueue_summary_updates if summary_queue is not None else None
+        active_summary_queue = summary_queue
+        increment_handler = (
+            active_summary_queue.enqueue
+            if active_summary_queue is not None
+            else None
+        )
         if app_config.JEV_ENABLED:
             classifier = _get_jev_classifier()
             if classifier is not None:
-                summary_llm = None if summary_queue is not None else _get_summary_llm()
-                return await grouping_engine.assign_new_articles_with_jev(
+                summary_llm = None if active_summary_queue is not None else _get_summary_llm()
+                result = await grouping_engine.assign_new_articles_with_jev(
                     classifier,
                     on_event_increments=increment_handler,
                     summary_llm=summary_llm,
                 )
+                if active_summary_queue is not None:
+                    await active_summary_queue.flush()
+                return result
             logger.warning("TASKS: Jev unavailable; falling back to the full grouping LLM")
 
         grouping_llm = llm or _get_grouping_llm()
         if not grouping_llm:
             return {"skipped": 1, "reason": "grouping LLM unavailable"}
-        summary_llm = None if summary_queue is not None else _get_summary_llm()
-        return await grouping_engine.assign_new_articles(
+        summary_llm = None if active_summary_queue is not None else _get_summary_llm()
+        result = await grouping_engine.assign_new_articles(
             grouping_llm,
             create_new_events=create_new_events,
             on_event_increments=increment_handler,
             summary_llm=summary_llm,
         )
+        if active_summary_queue is not None:
+            await active_summary_queue.flush()
+        return result
 
 
 async def run_regroup(llm=None) -> dict:
@@ -157,15 +184,27 @@ async def run_regroup(llm=None) -> dict:
         grouping_llm = llm or _get_grouping_llm()
         if not grouping_llm:
             return {"skipped": 1, "reason": "grouping LLM unavailable"}
-        increment_handler = enqueue_summary_updates if summary_queue is not None else None
-        initial_handler = summary_queue.summarize_initial if summary_queue is not None else None
-        summary_llm = None if summary_queue is not None else _get_summary_llm()
-        return await grouping_engine.regroup_uncategorized(
+        active_summary_queue = summary_queue
+        increment_handler = (
+            active_summary_queue.enqueue
+            if active_summary_queue is not None
+            else None
+        )
+        initial_handler = (
+            active_summary_queue.summarize_initial
+            if active_summary_queue is not None
+            else None
+        )
+        summary_llm = None if active_summary_queue is not None else _get_summary_llm()
+        result = await grouping_engine.regroup_uncategorized(
             grouping_llm,
             summary_llm=summary_llm,
             on_event_increments=increment_handler,
             on_new_events=initial_handler,
         )
+        if active_summary_queue is not None:
+            await active_summary_queue.flush()
+        return result
 
 
 async def scheduled_live_grouping() -> None:

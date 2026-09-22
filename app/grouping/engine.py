@@ -3,7 +3,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional, Tuple, Awaitable, Callable
+from typing import List, Dict, Any, Optional, Tuple, Awaitable, Callable, Set
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -17,6 +17,10 @@ from .feedback import build_few_shot_examples
 from .content_classifier import classify_title
 from .lifecycle import reset_expiry, reset_expiry_on_event
 from .response_parser import parse_json_object
+from .summary_queue import (
+    delete_persisted_summary_updates,
+    persist_summary_updates_in_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +275,7 @@ def _apply_live(
                     else:
                         counts[outcome] += 1
                         reset_expiry_on_event(new_event)
+                    event_increments[new_event.id].append(article_id)
                 elif decision == "uncategorized":
                     counts["uncategorized"] += 1
                     article.grouped_at = now
@@ -282,6 +287,7 @@ def _apply_live(
             except Exception as e:
                 logger.error(f"GROUPING: error applying assignment {a}: {e}", exc_info=True)
                 counts["errors"] += 1
+        persist_summary_updates_in_session(db, event_increments)
     logger.info(f"GROUPING: applied assignments {counts}")
     return counts, dict(event_increments)
 
@@ -492,12 +498,22 @@ async def _process_event_increments(
     from .summary_service import generate_summary_update
     for event_id, new_ids in event_increments.items():
         try:
-            await asyncio.wait_for(
-                generate_summary_update(event_id, new_ids, summary_llm),
-                timeout=SUMMARY_GUARD_TIMEOUT,
+            succeeded = bool(
+                await asyncio.wait_for(
+                    generate_summary_update(event_id, new_ids, summary_llm),
+                    timeout=SUMMARY_GUARD_TIMEOUT,
+                )
             )
+            if succeeded:
+                delete_persisted_summary_updates(event_id, new_ids)
+            else:
+                logger.error(
+                    "Auto-summary-update returned failure for event %s; durable "
+                    "work remains queued",
+                    event_id,
+                )
         except asyncio.TimeoutError:
-            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
+            logger.error(f"Auto-summary-update timed out for event {event_id} after {SUMMARY_GUARD_TIMEOUT}s; durable work remains queued")
         except Exception as e:
             logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
@@ -583,7 +599,7 @@ async def regroup_uncategorized(
     *,
     summary_llm: Optional[ChatOpenAI] = None,
     on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
-    on_new_events: Optional[Callable[[List[int]], Awaitable[None]]] = None,
+    on_new_events: Optional[Callable[[List[int]], Awaitable[Optional[List[int]]]]] = None,
 ) -> Dict[str, int]:
     articles = fetch_ungrouped_articles(
         limit=100,
@@ -655,40 +671,99 @@ async def regroup_uncategorized(
         for ev_id, new_ids in chunk_increments.items():
             event_increments[ev_id].extend(new_ids)
 
-    new_event_ids_set = set(all_new_event_ids)
-    if all_new_event_ids:
+    dedup_counts: Dict[str, int] = {}
+    dedup_increments: Dict[int, List[int]] = defaultdict(list)
+    try:
+        from .dedup import dedup_events
+        dedup_counts = await dedup_events(
+            llm,
+            summary_increments=dedup_increments,
+        )
+    except Exception as e:
+        logger.error(f"REGROUP: dedup pass failed: {e}", exc_info=True)
+
+    for event_id, article_ids in dedup_increments.items():
+        event_increments[event_id].extend(article_ids)
+
+    # Dedup can move articles and delete newly-created secondary events. Reconcile
+    # the summary work against the final committed mapping before generating it.
+    current_increments: Dict[int, List[int]] = {}
+    with db_session_scope() as db:
+        requested_new_event_ids = set(all_new_event_ids)
+        surviving_new_event_ids = {
+            row[0]
+            for row in db.query(Event.id)
+            .filter(Event.id.in_(requested_new_event_ids))
+            .all()
+        } if requested_new_event_ids else set()
+        for event_id, article_ids in event_increments.items():
+            requested_ids = set(article_ids)
+            if not requested_ids:
+                continue
+            valid_ids = [
+                row[0]
+                for row in db.query(Article.id)
+                .filter(
+                    Article.event_id == event_id,
+                    Article.id.in_(requested_ids),
+                )
+                .all()
+            ]
+            if valid_ids:
+                current_increments[event_id] = valid_ids
+
+    event_increments = defaultdict(list, current_increments)
+    new_event_ids_set = surviving_new_event_ids
+    failed_initial_event_ids: Set[int] = set()
+    if surviving_new_event_ids:
+        initial_event_ids = sorted(surviving_new_event_ids)
         if on_new_events is not None:
-            await on_new_events(all_new_event_ids)
+            try:
+                failed_ids = await on_new_events(initial_event_ids)
+                if failed_ids:
+                    failed_initial_event_ids.update(int(event_id) for event_id in failed_ids)
+            except Exception as e:
+                failed_initial_event_ids.update(new_event_ids_set)
+                logger.error(
+                    "Auto-initial summary callback failed; routing all new events "
+                    "through the retryable incremental path: %s",
+                    e,
+                    exc_info=True,
+                )
         else:
             from .summary_service import generate_initial_summary
             initial_summary_llm = summary_llm or llm
-            for new_event_id in all_new_event_ids:
+            for new_event_id in initial_event_ids:
                 try:
-                    await asyncio.wait_for(
-                        generate_initial_summary(new_event_id, initial_summary_llm),
-                        timeout=SUMMARY_GUARD_TIMEOUT,
+                    succeeded = bool(
+                        await asyncio.wait_for(
+                            generate_initial_summary(new_event_id, initial_summary_llm),
+                            timeout=SUMMARY_GUARD_TIMEOUT,
+                        )
                     )
+                    if not succeeded:
+                        failed_initial_event_ids.add(new_event_id)
+                    else:
+                        delete_persisted_summary_updates(
+                            new_event_id,
+                            event_increments.get(new_event_id, []),
+                        )
                 except asyncio.TimeoutError:
-                    logger.error(f"Auto-initial summary timed out for event {new_event_id} after {SUMMARY_GUARD_TIMEOUT}s; skipping")
+                    failed_initial_event_ids.add(new_event_id)
+                    logger.error(f"Auto-initial summary timed out for event {new_event_id} after {SUMMARY_GUARD_TIMEOUT}s; retrying through incremental path")
                 except Exception as e:
+                    failed_initial_event_ids.add(new_event_id)
                     logger.error(f"Auto-initial summary failed for event {new_event_id}: {e}", exc_info=True)
     queued_increments = {
         event_id: new_ids
         for event_id, new_ids in event_increments.items()
-        if event_id not in new_event_ids_set
+        if event_id not in new_event_ids_set or event_id in failed_initial_event_ids
     }
     await _process_event_increments(
         queued_increments,
         on_event_increments=on_event_increments,
         summary_llm=summary_llm or llm,
     )
-
-    dedup_counts: Dict[str, int] = {}
-    try:
-        from .dedup import dedup_events
-        dedup_counts = await dedup_events(llm)
-    except Exception as e:
-        logger.error(f"REGROUP: dedup pass failed: {e}", exc_info=True)
 
     total_counts["dedup"] = dedup_counts
     logger.info(f"REGROUP: applied assignments {total_counts}")
@@ -754,6 +829,9 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                     reset_expiry_on_event(event)
                     event_increments[event.id].append(article_id)
                     counts["existing"] += 1
+                elif decision == "new":
+                    # New clusters are applied together in the second pass below.
+                    continue
                 elif decision == "uncategorized":
                     counts["uncategorized"] += 1
                     article.proposed_event_name = None
@@ -823,6 +901,8 @@ def _apply_regroup_inner(assignments: List[Dict[str, Any]]) -> Tuple[Dict[str, i
                         art.grouping_confidence = float(item.get("confidence") or 0.0)
                         art.grouped_at = now
                 counts["new_singletons"] += 1
+
+        persist_summary_updates_in_session(db, event_increments)
 
     logger.info(f"REGROUP: applied assignments {counts}")
     return counts, (new_event_ids, dict(event_increments))
