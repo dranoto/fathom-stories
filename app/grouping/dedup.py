@@ -11,22 +11,11 @@ from sqlalchemy import desc
 from ..database import db_session_scope
 from ..database.models import Event, Article, EventSummary, GroupingFeedback
 from .. import config as app_config
+from .response_parser import parse_json_object
 
 logger = logging.getLogger(__name__)
 
 DEDUP_CONFIDENCE_THRESHOLD = 0.7
-
-
-def _parse_response(content: str) -> Dict[str, Any]:
-    content = content.strip()
-    if content.startswith("```json"):
-        content = content[7:]
-    if content.startswith("```"):
-        content = content[3:]
-    if content.endswith("```"):
-        content = content[:-3]
-    content = content.strip()
-    return json.loads(content)
 
 
 def _event_payload(ev: Event, max_titles: int = 3) -> Dict[str, Any]:
@@ -124,7 +113,7 @@ async def dedup_events(llm: ChatOpenAI) -> Dict[str, int]:
         return {"checked": len(events), "merged": 0, "skipped_low_confidence": 0, "errors": 1}
 
     try:
-        parsed = _parse_response(content)
+        parsed = parse_json_object(content)
     except Exception as e:
         logger.error(f"DEDUP: failed to parse LLM response: {e}\nContent: {content[:1000]}")
         return {"checked": len(events), "merged": 0, "skipped_low_confidence": 0, "errors": 1}

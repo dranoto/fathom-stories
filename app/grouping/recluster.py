@@ -12,20 +12,9 @@ from ..database.models import Article, Event, ReclusterProposal
 from .. import config as app_config
 from .prompts import build_recluster_prompt, build_few_shot_block
 from .feedback import build_few_shot_examples
+from .response_parser import parse_json_object
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_response(content: str) -> Dict[str, Any]:
-    content = content.strip()
-    if content.startswith("```json"):
-        content = content[7:]
-    if content.startswith("```"):
-        content = content[3:]
-    if content.endswith("```"):
-        content = content[:-3]
-    content = content.strip()
-    return json.loads(content)
 
 
 def fetch_recluster_window() -> Tuple[List[Event], List[Event], List[Event], List[Article]]:
@@ -175,7 +164,7 @@ async def generate_recluster_diff(llm: ChatOpenAI, auto_apply: bool = False) -> 
         return {"status": "llm_error", "proposals": 0}
 
     try:
-        parsed = _parse_response(content)
+        parsed = parse_json_object(content)
     except Exception as e:
         logger.error(f"RECLUSTER: parse failed: {e}\nContent: {content[:1000]}")
         return {"status": "parse_error", "proposals": 0}

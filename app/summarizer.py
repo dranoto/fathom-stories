@@ -1,9 +1,7 @@
 # app/summarizer.py
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 from langchain_openai import ChatOpenAI
-
-from . import config as app_config
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +13,14 @@ def initialize_llm(
     temperature: float = 0.3,
     max_tokens: int = 1024,
     request_timeout: float = 180.0,
+    reasoning_effort: Optional[str] = None,
 ) -> Optional[ChatOpenAI]:
     """
     Initializes a ChatOpenAI LLM instance for OpenAI-compatible endpoints.
     Returns None on failure (caller should handle).
     """
     try:
-        llm = ChatOpenAI(
+        kwargs: Dict[str, Any] = dict(
             model=model_name,
             openai_api_key=api_key,
             openai_api_base=base_url,
@@ -29,9 +28,13 @@ def initialize_llm(
             max_tokens=max_tokens,
             request_timeout=request_timeout,
         )
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+        llm = ChatOpenAI(**kwargs)
         logger.info(
             f"Initialized LLM: {model_name} at {base_url} "
-            f"(max_tokens={max_tokens}, request_timeout={request_timeout}s)"
+            f"(max_tokens={max_tokens}, request_timeout={request_timeout}s, "
+            f"reasoning_effort={reasoning_effort})"
         )
         return llm
     except Exception as e:

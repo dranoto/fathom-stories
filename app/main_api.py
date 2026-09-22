@@ -48,6 +48,7 @@ def _init_llms(app: FastAPI) -> None:
         temperature=app_config.SUMMARY_LLM_TEMPERATURE,
         max_tokens=app_config.SUMMARY_MAX_OUTPUT_TOKENS,
         request_timeout=app_config.SUMMARY_REQUEST_TIMEOUT,
+        reasoning_effort=app_config.SUMMARY_REASONING_EFFORT,
     )
     app.state.llm_grouping_instance = initialize_llm(
         api_key=app_config.OPENAI_API_KEY,
@@ -56,6 +57,7 @@ def _init_llms(app: FastAPI) -> None:
         temperature=app_config.GROUPING_LLM_TEMPERATURE,
         max_tokens=app_config.GROUPING_MAX_OUTPUT_TOKENS,
         request_timeout=app_config.GROUPING_REQUEST_TIMEOUT,
+        reasoning_effort=app_config.GROUPING_REASONING_EFFORT,
     )
     app.state.llm_chat_instance = initialize_llm(
         api_key=app_config.OPENAI_API_KEY,
@@ -64,6 +66,7 @@ def _init_llms(app: FastAPI) -> None:
         temperature=app_config.CHAT_LLM_TEMPERATURE,
         max_tokens=app_config.CHAT_MAX_OUTPUT_TOKENS,
         request_timeout=app_config.CHAT_REQUEST_TIMEOUT,
+        reasoning_effort=app_config.CHAT_REASONING_EFFORT,
     )
     tasks.configure_summary_queue(app.state.llm_summary_instance)
 

@@ -56,6 +56,7 @@ def _get_grouping_llm():
         temperature=app_config.GROUPING_LLM_TEMPERATURE,
         max_tokens=app_config.GROUPING_MAX_OUTPUT_TOKENS,
         request_timeout=app_config.GROUPING_REQUEST_TIMEOUT,
+        reasoning_effort=app_config.GROUPING_REASONING_EFFORT,
     )
 
 

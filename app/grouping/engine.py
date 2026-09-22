@@ -1,6 +1,5 @@
 # app/grouping/engine.py
 import asyncio
-import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
@@ -17,6 +16,7 @@ from .prompts import build_group_assign_prompt, build_few_shot_block, build_regr
 from .feedback import build_few_shot_examples
 from .content_classifier import classify_title
 from .lifecycle import reset_expiry, reset_expiry_on_event
+from .response_parser import parse_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -103,18 +103,6 @@ def find_or_create_event(
     db.add(new_event)
     db.flush()
     return new_event, "created"
-
-
-def _parse_response(content: str) -> Dict[str, Any]:
-    content = content.strip()
-    if content.startswith("```json"):
-        content = content[7:]
-    if content.startswith("```"):
-        content = content[3:]
-    if content.endswith("```"):
-        content = content[:-3]
-    content = content.strip()
-    return json.loads(content)
 
 
 def _event_summary_for_prompt(event: Event, max_titles: int = 5) -> Dict[str, Any]:
@@ -442,7 +430,7 @@ async def _assign_chunk(
         return None
 
     try:
-        parsed = _parse_response(content)
+        parsed = parse_json_object(content)
     except Exception as e:
         logger.error(f"GROUPING: batch {idx}/{n_batches} parse failed: {e}\n{content[:1000]}")
         return None
@@ -508,7 +496,7 @@ async def regroup_uncategorized(
             continue
 
         try:
-            parsed = _parse_response(content)
+            parsed = parse_json_object(content)
         except Exception as e:
             logger.error(f"REGROUP: batch {idx}/{n_batches} parse failed: {e}\n{content[:1000]}")
             total_counts["batches_failed"] += 1
