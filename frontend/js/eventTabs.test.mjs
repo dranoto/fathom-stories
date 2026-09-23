@@ -1,6 +1,7 @@
 // frontend/js/eventTabs.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 globalThis.localStorage = {
   _data: {},
@@ -30,9 +31,11 @@ const {
   partitionEvents,
   buildNavOrder,
   sortEventsForBar,
+  renderEventTabs,
   _minorToggleMarkup,
   _cardMarkup,
 } = await import("./eventTabs.js");
+const { setEvents } = await import("./state.js");
 
 const NOW = new Date("2026-09-06T12:00:00Z").getTime();
 const oneHourAgo = new Date(NOW - 1 * 3600 * 1000).toISOString();
@@ -110,11 +113,11 @@ test("partitionNewAndUpdated: orders fresh by new_since_visit desc, then created
   assert.deepEqual(fresh.map((e) => e.id), [11, 12, 10]);
 });
 
-test("partitionEvents: never duplicates fresh events into topN/minor", () => {
-  const { topN, minor } = partitionEvents(sample, 4000);
-  const topMinorIds = new Set([...topN, ...minor].map((e) => e.id));
-  assert.ok(!topMinorIds.has(2),
-    `fresh event 2 must not appear in topN/minor; got ${[...topMinorIds]}`);
+test("partitionEvents: prioritizes fresh events without duplicating them", () => {
+  const { topN, minor } = partitionEvents(sample, 800);
+  const ids = [...topN, ...minor].map((e) => e.id);
+  assert.equal(ids[0], 2);
+  assert.deepEqual([...ids].sort((a, b) => a - b), [1, 2, 3, 4]);
 });
 
 test("buildNavOrder: places fresh events ahead of topN and minor", () => {
@@ -128,22 +131,82 @@ test("buildNavOrder: places fresh events ahead of topN and minor", () => {
     `stable event 3 must appear after fresh event 2; nav=${JSON.stringify(nav)}`);
 });
 
-test("partitionEvents counts fresh-strip cards when sizing the main row", () => {
+test("partitionEvents bounds 17 fresh events to a single viewport row", () => {
   const events = [
-    { id: 1, name: "Fresh A", new_since_visit: 1, created_at: oneHourAgo },
-    { id: 2, name: "Fresh B", new_since_visit: 1, created_at: oneHourAgo },
-    { id: 3, name: "Fresh C", new_since_visit: 1, created_at: oneHourAgo },
-    ...Array.from({ length: 5 }, (_, index) => ({
-      id: index + 10,
+    ...Array.from({ length: 17 }, (_, index) => ({
+      id: index + 1,
+      name: `Fresh ${index}`,
+      new_since_visit: 17 - index,
+      created_at: oneHourAgo,
+    })),
+    ...Array.from({ length: 3 }, (_, index) => ({
+      id: index + 100,
       name: `Stable ${index}`,
       new_since_visit: 0,
       created_at: twoDaysAgo,
-      article_count: 5 - index,
+      article_count: 3 - index,
     })),
   ];
-  const { topN, minor } = partitionEvents(events, 1100);
-  assert.equal(topN.length, 3);
-  assert.equal(minor.length, 2);
+  const { topN, minor } = partitionEvents(events, 1440);
+  assert.equal(topN.length, 5);
+  assert.deepEqual(topN.map((e) => e.id), [1, 2, 3, 4, 5]);
+  assert.equal(minor.length, 15);
+  const nav = buildNavOrder(events, 1440);
+  assert.equal(nav.length, 21);
+  assert.equal(new Set(nav.filter((n) => n.kind === "event").map((n) => n.id)).size, 20);
+});
+
+test("narrow screens show a lone event beside Inbox without an unnecessary drawer", () => {
+  const event = { id: 99, name: "Only story", article_count: 1, new_since_visit: 1, created_at: oneHourAgo };
+  assert.deepEqual(partitionEvents([event], 304), { topN: [event], minor: [] });
+  const overflowing = Array.from({ length: 17 }, (_, index) => ({ ...event, id: index + 200 }));
+  const { topN, minor } = partitionEvents(overflowing, 304);
+  assert.equal(topN.length, 0);
+  assert.equal(minor.length, 17);
+});
+
+test("all browser imports of eventTabs share a cache-busted module URL", () => {
+  const files = ["../script.js", "./search.js", "./timeline.js", "./tabActions.js", "./mobileMenu.js"];
+  const versions = files.map((path) => {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    const match = source.match(/from ["'](?:\.\/js\/|\.\/)eventTabs\.js(\?v=\d+)["']/);
+    assert.ok(match, `${path} must import a versioned eventTabs.js`);
+    return match[1];
+  });
+  assert.equal(new Set(versions).size, 1, "all imports must use the same module instance");
+});
+
+test("renderEventTabs draws one row and a drawer even when every event is fresh", () => {
+  const events = Array.from({ length: 17 }, (_, index) => ({
+    id: index + 200,
+    name: `Fresh ${index}`,
+    new_since_visit: 1,
+    created_at: oneHourAgo,
+  }));
+  const container = {
+    clientWidth: 1416,
+    innerHTML: "",
+    querySelectorAll() { return []; },
+  };
+  const previousGet = document.getElementById;
+  const previousCreate = document.createElement;
+  document.getElementById = (id) => id === "event-tabs" ? container : null;
+  document.createElement = () => ({
+    className: "", style: {}, setAttribute() {}, querySelectorAll() { return []; },
+  });
+  try {
+    setEvents(events);
+    renderEventTabs(() => {}, () => {}, () => {});
+    assert.doesNotMatch(container.innerHTML, /new-strip/);
+    assert.equal((container.innerHTML.match(/class="event-bar-row"/g) || []).length, 1);
+    assert.equal((container.innerHTML.match(/data-event-id=/g) || []).length, 5);
+    assert.match(container.innerHTML, /data-minor-toggle="1"/);
+    assert.match(container.innerHTML, /12 More Stories/);
+  } finally {
+    setEvents([]);
+    document.getElementById = previousGet;
+    document.createElement = previousCreate;
+  }
 });
 
 test("partitionEvents does not reserve a drawer when every stable event fits", () => {

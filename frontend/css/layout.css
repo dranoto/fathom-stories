@@ -131,6 +131,7 @@ body {
   flex-direction: column;
   gap: 0;
   overflow: visible;
+  min-width: 0;
   min-height: 64px;
   position: relative;
 }
@@ -138,18 +139,15 @@ body {
   display: flex;
   flex-direction: row;
   gap: 8px;
-  overflow-x: auto;
-  overflow-y: visible;
+  min-width: 0;
+  overflow: hidden;
   align-items: stretch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-.event-tabs .event-bar-row::-webkit-scrollbar { height: 6px; }
 .event-tab[data-group="top-start"] {
   margin-left: 0;
 }
 .event-tab[data-group="drawer"] {
-  margin-left: 0;
+  margin-left: auto;
 }
 .tabs-empty {
   color: var(--text-dim);
@@ -377,71 +375,7 @@ body {
   padding-top: 0;
 }
 
-.event-tabs .new-strip {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 0 8px 0;
-  margin: 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
-}
-.event-tabs .new-strip-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 0 2px;
-}
-.event-tabs .new-strip-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-.event-tabs .new-strip-count {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-dim);
-  background: var(--bg-elev-2);
-  border-radius: 999px;
-  padding: 1px 7px;
-  min-width: 18px;
-  text-align: center;
-}
-.event-tabs .new-strip-row {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-.event-tabs .new-strip-row::-webkit-scrollbar { height: 6px; }
-.event-tabs .new-strip-row .event-tab {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.25);
-}
-.event-tabs .new-strip-row .event-tab:hover {
-  border-color: var(--accent);
-}
-
 @media (max-width: 640px) {
-  .event-tabs .new-strip {
-    gap: 3px;
-    padding-bottom: 6px;
-    margin-bottom: 6px;
-  }
-  .event-tabs .new-strip-header { padding: 0; }
-  .event-tabs .new-strip-label,
-  .event-tabs .new-strip-count { font-size: 9px; }
-  .event-tabs .new-strip-row {
-    gap: 6px;
-    scrollbar-width: none;
-  }
-  .event-tabs .new-strip-row::-webkit-scrollbar { display: none; }
   .event-tab {
     width: 180px;
     flex: 0 0 180px;

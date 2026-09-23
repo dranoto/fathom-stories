@@ -217,11 +217,9 @@ The event bar uses one of two sort modes, both per-browser-overridable via 6 sli
 **Reader-driven corrections** (move-to-event, remove-from-event) write `GroupingFeedback` rows. Top 5 most recent are injected into the next LLM call as few-shot examples (the "editor corrections are ground truth" section).
 
 **Event bar layout** (frontend, `frontend/js/eventTabs.js`):
-- Bar is partitioned into 4 sections in order: **Inbox** → **Top N** (N events with the highest `article_count`, with `last_article_at` as tiebreaker; N is computed from the viewport width so the bar fits without overflow at common desktop widths) → **Most Recent** (single event with the latest `created_at`, marked with a "New" pill in the bottom-right and a tinted background; if it overlaps a Top N card, the (N+1)th-by-count takes its place so Top N + Most Recent are always N+1 distinct cards) → **Minor Events drawer toggle** (a dashed-border card showing the count of all remaining events; click pops a dropdown menu).
-- **Elastic spacing:** cards inside Top N stay tight (8px gap), but the gaps between Inbox→Top N, Top N→Most Recent, and Most Recent→Drawer are elastic via `margin-left: auto` on `data-group="top-start"`, `data-group="most-recent"`, and `data-group="drawer"`. Inbox always sits at the left edge, the Drawer toggle always sits at the right edge.
-- **Drawer is a floating dropdown menu** anchored under the toggle: `position: absolute; top: calc(100% + 6px); right: 0; width: 192px; max-height: 60vh; z-index: 200;`. Pops down over the reader pane with a 200ms max-height + opacity transition. Cards inside are 180px wide, single column, vertically scrollable when the minor list overflows 60vh.
-- Every event card is `width: 180px; flex: 0 0 180px;` (fixed). Titles clamp to 2 lines with `-webkit-line-clamp`. The "New" tag on the most-recent card uses `--accent` background and sits in the bottom-right. The minor-toggle card has a dashed border to distinguish it from real events.
-- Bar scrolls horizontally on very narrow viewports (<580px); the toggle is at the right of the scroll content in that case.
+- A single row displays **Inbox**, then new/updated events in activity order, then the remaining events in the selected sort order. The number of visible cards is bounded by the row's available width; overflow goes into the **More Stories** drawer. Swipe navigation follows the same order with no duplicate events.
+- The drawer toggle stays at the viewport's right edge using `margin-left: auto`; the bar does not scroll horizontally. The drawer is fixed under the toggle, is 192px wide, and scrolls vertically within 60vh (50vh on narrow screens).
+- Cards are 180px wide at ordinary widths. At ≤400px the Inbox and drawer toggle shrink together to fit the viewport. Titles clamp to two lines; new-since-visit badges and the "New" tag remain visible on the promoted cards.
 
 ## LLM Configuration
 

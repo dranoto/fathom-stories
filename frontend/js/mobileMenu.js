@@ -11,7 +11,7 @@ import { loadTheme, toggleTheme, currentTheme } from "./theme.js";
 import { getFontSize, setFontSize } from "./fontSize.js";
 import { getPwaInstallState, installPwa } from "./pwa.js";
 import { clearRuntimeCache } from "./swBridge.js";
-import { escapeHtml, renderEventTabs } from "./eventTabs.js";
+import { escapeHtml, renderEventTabs } from "./eventTabs.js?v=38";
 
 let isOpen = false;
 let onRunAfterRefresh = null;

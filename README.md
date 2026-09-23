@@ -11,7 +11,7 @@ The scraper, RSS pipeline, and bypass-paywalls Chrome extension are reused **ver
 - LLM auto-assigns each new article to an existing event, a new event, or "uncategorized"
 - LLM also scores each article's importance (0-1) for bubble size in the timeline
 - Each hourly live-grouping pass coalesces its articles by event, then updates affected summaries before returning; regroup does the same after its full pass. Failed summary work is persisted in SQLite and restored after restart.
-- Default UI layout includes a dedicated **New & updated** strip before the ranked event list
+- The event bar is one viewport-bounded row: Inbox, prioritized new/updated stories, then ranked stories, with remaining stories in a vertically scrollable drawer at the right edge
 - Move/remove from event, with corrections fed back to the LLM as few-shot examples
 - Daily recluster: surfaces merge/split/revive candidates (currently write-only, no UI)
 - Hourly lifecycle: events with no new articles for 7+ days auto-archive

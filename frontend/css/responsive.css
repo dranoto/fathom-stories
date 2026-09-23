@@ -14,6 +14,7 @@ html, body {
 
 body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto 1fr;
   -webkit-tap-highlight-color: transparent;
 }
@@ -65,13 +66,9 @@ body {
   min-height: 44px;
 }
 .event-tabs .event-bar-row {
-  overflow-x: auto;
-  overflow-y: visible;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   gap: 6px;
 }
-.event-tabs .event-bar-row::-webkit-scrollbar { display: none; }
 .event-tab {
   padding: 6px 8px;
   font-size: 12px;
@@ -83,6 +80,12 @@ body {
 .event-tab .badge {
   font-size: 10px;
   padding: 1px 5px;
+}
+@media (max-width: 400px) {
+  .event-tabs .event-bar-row > .event-tab {
+    width: min(180px, calc((100% - 6px) / 2));
+    flex: 0 0 min(180px, calc((100% - 6px) / 2));
+  }
 }
 .event-tab.inbox-tab {
   margin-left: auto;
@@ -552,20 +555,6 @@ body {
    ============================================================= */
 @media (min-width: 1024px) {
   .app-header { padding: 10px 20px; }
-  .event-tabs .event-bar-row {
-    scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-  }
-  .event-tabs .event-bar-row::-webkit-scrollbar {
-    display: block;
-    height: 6px;
-  }
-  .event-tabs .event-bar-row::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-  .event-tabs .event-bar-row::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
-  }
-  .event-tabs .event-bar-row::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
   .event-header h1 { font-size: 22px; }
   .timeline { gap: 12px; }
   .timeline::before { left: 80px; }

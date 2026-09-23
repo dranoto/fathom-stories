@@ -1,6 +1,6 @@
 // frontend/js/search.js
 import { searchArticles } from "./apiService.js";
-import { escapeHtml } from "./eventTabs.js";
+import { escapeHtml } from "./eventTabs.js?v=38";
 import { selectEventTab, selectInboxTab } from "./tabActions.js";
 
 let debounceHandle = null;

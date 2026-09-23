@@ -42,7 +42,9 @@ function _getBarWidth() {
   const container = document.getElementById("event-tabs");
   if (container) {
     const w = container.clientWidth || container.getBoundingClientRect().width;
-    if (w > 0) return w;
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(container) : null;
+    const padding = style ? parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) : 0;
+    if (w > 0) return w - (Number.isFinite(padding) ? padding : 0);
   }
   return _getViewportWidth();
 }
@@ -92,26 +94,19 @@ export function partitionEvents(events, viewportWidth) {
   if (!events || !events.length) {
     return { topN: [], minor: [] };
   }
-  const { rest } = partitionNewAndUpdated(events);
-  const sorted = sortEventsForBar(rest);
-  const reservedCards = rest.length > 0 ? 2 : 1;
-  const visibleCapacity = Math.max(
-    0,
-    Math.floor((vw - (reservedCards * CARD_WIDTH) - GAP_WIDTH) / (CARD_WIDTH + GAP_WIDTH)),
-  );
-  const N = Math.min(rest.length, visibleCapacity);
-  const topN = sorted.slice(0, N);
-  const shown = new Set(topN.map((e) => e.id));
-  const minor = sorted.filter((e) => !shown.has(e.id));
-  return { topN, minor };
+  const { fresh, rest } = partitionNewAndUpdated(events);
+  const sorted = [...fresh, ...sortEventsForBar(rest)];
+  const cardWidth = Math.min(CARD_WIDTH, Math.max(0, (vw - GAP_WIDTH) / 2));
+  const slots = Math.max(1, Math.floor((vw + GAP_WIDTH) / (cardWidth + GAP_WIDTH)));
+  const needsDrawer = sorted.length + 1 > slots;
+  const visibleCapacity = Math.max(0, slots - (needsDrawer ? 2 : 1));
+  return { topN: sorted.slice(0, visibleCapacity), minor: sorted.slice(visibleCapacity) };
 }
 
 export function buildNavOrder(events, viewportWidth) {
-  const { fresh } = partitionNewAndUpdated(events || []);
   const { topN, minor } = partitionEvents(events || [], viewportWidth);
   return [
     { kind: "inbox" },
-    ...fresh.map((e) => ({ kind: "event", id: e.id })),
     ...topN.map((e) => ({ kind: "event", id: e.id })),
     ...minor.map((e) => ({ kind: "event", id: e.id })),
   ];
@@ -201,14 +196,6 @@ function _minorToggleMarkup(events, drawerOpen, activeId, inboxOpen) {
   return `<div class="${cls}" data-minor-toggle="1" data-group="drawer" role="button" tabindex="0" aria-expanded="${drawerOpen ? "true" : "false"}" aria-controls="minor-drawer" title="${title}">
     <div class="name two-line"><span>${label}</span><span class="minor-toggle-chev">${chev}</span></div>
     <div class="meta">${activity}</div>
-  </div>`;
-}
-
-function _newStripHeaderMarkup(count) {
-  if (!count) return "";
-  return `<div class="new-strip-header" aria-hidden="true">
-    <span class="new-strip-label">New &amp; updated</span>
-    <span class="new-strip-count">${count}</span>
   </div>`;
 }
 
@@ -319,31 +306,16 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
     return;
   }
 
-  const { fresh } = partitionNewAndUpdated(events);
   const { topN, minor } = partitionEvents(events);
-  const isDesk = isDesktopLayout();
 
   const parts = [];
-
-  if (fresh.length > 0) {
-    parts.push('<div class="new-strip">');
-    parts.push(_newStripHeaderMarkup(fresh.length));
-    parts.push('<div class="new-strip-row">');
-    for (const e of fresh) {
-      parts.push(_cardMarkup(e, activeId, inboxOpen, "new-strip-item"));
-    }
-    parts.push("</div></div>");
-  }
-
   parts.push('<div class="event-bar-row">');
   parts.push(_inboxMarkup(activeId, inboxOpen, inboxN, inboxU));
-  if (isDesk) {
-    for (let i = 0; i < topN.length; i++) {
-      const group = i === 0 ? "top-start" : "top";
-      parts.push(_cardMarkup(topN[i], activeId, inboxOpen, group));
-    }
+  for (let i = 0; i < topN.length; i++) {
+    const group = i === 0 ? "top-start" : "top";
+    parts.push(_cardMarkup(topN[i], activeId, inboxOpen, group));
   }
-  const drawerEvents = isDesk ? minor : [...topN, ...minor];
+  const drawerEvents = minor;
   if (drawerEvents.length > 0) {
     parts.push(_minorToggleMarkup(drawerEvents, drawerOpen, activeId, inboxOpen));
   }
