@@ -8,6 +8,7 @@ from app import tasks
 class SchedulerLockTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         tasks.rss_update_lock = asyncio.Lock()
+        self.enterContext(patch.object(tasks.app_config, "OPENAI_API_KEY", "test-only-key"))
 
     async def test_live_grouping_waits_for_rss_fetch_instead_of_dropping_run(self):
         started = asyncio.Event()

@@ -1,0 +1,68 @@
+{
+  "articles": [
+    {
+      "id": 101,
+      "title": "Ceasefire talks resume in Geneva",
+      "source": "Northstar News",
+      "published_date": "2026-09-22T08:00:00Z",
+      "snippet": "Negotiators returned to Geneva for another round of talks after overnight consultations.",
+      "expected_cluster": "geneva-ceasefire"
+    },
+    {
+      "id": 102,
+      "title": "Negotiators resume Geneva ceasefire talks",
+      "source": "City Wire",
+      "published_date": "2026-09-22T08:30:00Z",
+      "snippet": "A new round of ceasefire negotiations began in Geneva this morning.",
+      "expected_cluster": "geneva-ceasefire"
+    },
+    {
+      "id": 103,
+      "title": "Ceasefire negotiators meet again in Geneva",
+      "source": "World Desk",
+      "published_date": "2026-09-22T09:00:00Z",
+      "snippet": "Officials said the Geneva meeting follows the latest ceasefire proposal.",
+      "expected_cluster": "geneva-ceasefire"
+    },
+    {
+      "id": 201,
+      "title": "Hurricane Nadia makes landfall in Belize",
+      "source": "Coastline Report",
+      "published_date": "2026-09-22T07:45:00Z",
+      "snippet": "The storm reached the Belize coast early Tuesday, bringing damaging winds.",
+      "expected_cluster": "hurricane-nadia"
+    },
+    {
+      "id": 202,
+      "title": "Belize braces as Hurricane Nadia nears coast",
+      "source": "National Bulletin",
+      "published_date": "2026-09-22T08:10:00Z",
+      "snippet": "Residents prepared for the storm as Nadia moved toward the coast of Belize.",
+      "expected_cluster": "hurricane-nadia"
+    },
+    {
+      "id": 301,
+      "title": "UN climate talks in Geneva focus on emissions targets",
+      "source": "Green Ledger",
+      "published_date": "2026-09-22T08:20:00Z",
+      "snippet": "Delegates are discussing emissions targets at the climate conference in Geneva.",
+      "expected_cluster": null
+    },
+    {
+      "id": 401,
+      "title": "Senate debates federal budget package",
+      "source": "Capitol Journal",
+      "published_date": "2026-09-22T06:00:00Z",
+      "snippet": "Lawmakers opened debate on the annual federal spending package.",
+      "expected_cluster": null
+    },
+    {
+      "id": 402,
+      "title": "Stocks rise after central bank holds interest rates",
+      "source": "Market Watcher",
+      "published_date": "2026-09-22T06:15:00Z",
+      "snippet": "Equities advanced after policymakers left the benchmark rate unchanged.",
+      "expected_cluster": null
+    }
+  ]
+}

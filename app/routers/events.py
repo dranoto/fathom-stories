@@ -35,10 +35,23 @@ from ..grouping import lifecycle as lifecycle_module
 from ..grouping import chat as chat_module
 from .. import mcp_tools
 from .. import config as app_config
+from ..research import telemetry
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+
+
+def _record_research_feedback(feedback) -> None:
+    try:
+        telemetry.record_manual_correction(
+            feedback.id, feedback.article_id,
+            feedback.original_event_id, feedback.corrected_event_id,
+            feedback.kind,
+            corrected_at=feedback.created_at,
+        )
+    except Exception:
+        logger.debug("EVENTS: optional correction telemetry could not be recorded", exc_info=True)
 
 
 def _persist_event_summary_regeneration(db, event_ids) -> Dict[int, List[int]]:
@@ -528,7 +541,7 @@ async def add_article_to_event(
     event.archived_at = None
     from ..grouping.lifecycle import reset_expiry_on_event
     reset_expiry_on_event(event)
-    record_correction_in_session(
+    feedback = record_correction_in_session(
         db,
         article_id=article_id,
         kind="move",
@@ -547,6 +560,8 @@ async def add_article_to_event(
         logger.error(f"Error adding article to event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to add article to event")
 
+    if not already_in:
+        _record_research_feedback(feedback)
     if not already_in:
         background_tasks.add_task(_queue_summary_regeneration, affected_event_ids)
 
@@ -571,7 +586,7 @@ async def remove_article_from_event(
     article = db.query(Article).filter(Article.id == article_id, Article.event_id == event_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not in event")
-    record_correction_in_session(
+    feedback = record_correction_in_session(
         db,
         article_id=article_id,
         kind="move",
@@ -605,6 +620,7 @@ async def remove_article_from_event(
         logger.error(f"Error removing article from event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to remove article")
 
+    _record_research_feedback(feedback)
     if not disbanded:
         background_tasks.add_task(_queue_summary_regeneration, [event_id])
 
@@ -689,7 +705,7 @@ async def move_article(
     else:
         raise HTTPException(status_code=400, detail="Provide target_event_id or new_event_name")
 
-    record_correction_in_session(
+    feedback = record_correction_in_session(
         db,
         article_id=article_id,
         kind="move",
@@ -711,6 +727,7 @@ async def move_article(
         db.rollback()
         logger.error(f"Error moving article: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to move article")
+    _record_research_feedback(feedback)
     target_ev = verify_event_exists(db, target_id)
     source_id = int(getattr(source, "id", event_id))
     target_id_int = int(target_id)
@@ -747,8 +764,9 @@ async def merge_events(
         {Article.event_id: event_id}, synchronize_session=False
     )
     _persist_event_summary_regeneration(db, [event_id])
+    feedback = None
     if feedback_article is not None:
-        record_correction_in_session(
+        feedback = record_correction_in_session(
             db,
             article_id=int(feedback_article[0]),
             kind="merge",
@@ -763,6 +781,8 @@ async def merge_events(
         db.rollback()
         logger.error(f"Error merging events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to merge events")
+    if feedback is not None:
+        _record_research_feedback(feedback)
     background_tasks.add_task(_queue_summary_regeneration, [event_id])
     return {"message": f"Merged {other_id} into {event_id}", "primary_event_id": event_id}
 
@@ -803,7 +823,7 @@ async def split_event(
         {Article.event_id: new_ev.id}, synchronize_session=False
     )
     _persist_event_summary_regeneration(db, [event_id, new_ev.id])
-    record_correction_in_session(
+    feedback = record_correction_in_session(
         db,
         article_id=int(split_articles[0].id),
         kind="split",
@@ -818,6 +838,7 @@ async def split_event(
         db.rollback()
         logger.error(f"Error splitting event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to split event")
+    _record_research_feedback(feedback)
     background_tasks.add_task(_queue_summary_regeneration, [int(event_id), int(getattr(new_ev, "id", 0))])
     article_count = db.query(func.count(Article.id)).filter(Article.event_id == new_ev.id).scalar() or 0
     return EventResponse(

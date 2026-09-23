@@ -73,6 +73,9 @@ All knobs live in `.env`. Restart the container (`docker compose restart app`) a
 | `JEV_FAILURE_THRESHOLD` | `8` | Consecutive provider failures before the circuit opens |
 | `JEV_CIRCUIT_COOLDOWN_SECONDS` | `300` | Circuit cooldown retained across live runs in the process |
 | `JEV_BATCH_TIMEOUT_SECONDS` | `120` | Classification-phase deadline for a live pass |
+| `JEV_DEDUP_ENABLED` | `false` | Probe local event-pair nominations with Jev during regroup; shadow only unless apply is enabled |
+| `JEV_DEDUP_APPLY` | `false` | Restrict full-model dedup review to Jev-approved pairs; leave off until retrieval recall is validated |
+| `FATHOM_RESEARCH_DB_PATH` | (none) | Optional separate SQLite file for metadata-only Jev decisions, regroup outcomes, manual corrections, and per-lane call measurements; use `/app/data/fathom-research.sqlite3` in Docker |
 | `RSS_FEED_URLS` | (none) | Comma-separated feed URLs or JSON list |
 | `DEFAULT_RSS_FETCH_INTERVAL_MINUTES` | `60` | Fetch cadence |
 | `LIVE_GROUPING_INTERVAL_MINUTES` | `60` | Assign new articles to existing events; new-event proposals wait for regroup |

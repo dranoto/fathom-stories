@@ -1,11 +1,14 @@
 # app/grouping/summarizer.py
 import json
 import logging
+import time
 from typing import List, Dict, Any, Optional
+from uuid import uuid4
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from .. import config as app_config
+from ..research import telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,9 @@ def parse_major_summary_response(response_content: str) -> Dict[str, Any]:
 async def _stream_full_text(llm: ChatOpenAI, prompt: str) -> str:
     parts: List[str] = []
     finish_reason: Optional[str] = None
+    started = time.monotonic()
+    success = False
+    error_type = None
     try:
         async for chunk in llm.astream([HumanMessage(content=prompt)]):
             content = getattr(chunk, "content", None)
@@ -69,9 +75,24 @@ async def _stream_full_text(llm: ChatOpenAI, prompt: str) -> str:
                 fr = metadata.get("finish_reason")
                 if fr:
                     finish_reason = fr
+        success = True
     except Exception as e:
+        error_type = type(e).__name__
         logger.error(f"Summary LLM stream failed: {e}", exc_info=True)
         raise
+    finally:
+        try:
+            model_name = getattr(llm, "model_name", None)
+            telemetry.record_provider_call(
+                uuid4().hex, "summary",
+                model_name if isinstance(model_name, str) else app_config.DEFAULT_SUMMARY_MODEL_NAME,
+                (time.monotonic() - started) * 1000,
+                len(prompt.encode("utf-8")),
+                sum(len(part.encode("utf-8")) for part in parts),
+                success=success, error_type=error_type,
+            )
+        except Exception:
+            logger.debug("SUMMARY: optional research telemetry could not be recorded", exc_info=True)
     if finish_reason:
         logger.debug(
             f"Summary stream finish_reason={finish_reason}, total_chars={sum(len(p) for p in parts)}"

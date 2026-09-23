@@ -57,6 +57,8 @@ JEV_MAX_REQUEST_BYTES = _env_int("JEV_MAX_REQUEST_BYTES", 28000)
 JEV_FAILURE_THRESHOLD = _env_int("JEV_FAILURE_THRESHOLD", 8)
 JEV_CIRCUIT_COOLDOWN_SECONDS = _env_float("JEV_CIRCUIT_COOLDOWN_SECONDS", 300.0)
 JEV_BATCH_TIMEOUT_SECONDS = _env_float("JEV_BATCH_TIMEOUT_SECONDS", 120.0)
+JEV_DEDUP_ENABLED = os.getenv("JEV_DEDUP_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+JEV_DEDUP_APPLY = os.getenv("JEV_DEDUP_APPLY", "false").lower() in ("1", "true", "yes", "on")
 
 try:
     SUMMARY_REQUEST_TIMEOUT = float(os.getenv("SUMMARY_REQUEST_TIMEOUT", "300"))

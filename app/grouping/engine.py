@@ -1,9 +1,11 @@
 # app/grouping/engine.py
 import asyncio
 import logging
+import time
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, Tuple, Awaitable, Callable, Set
+from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -12,6 +14,7 @@ from sqlalchemy import desc, or_, func, and_
 from ..database import db_session_scope
 from ..database.models import Article, Event
 from .. import config as app_config
+from ..research import telemetry
 from .prompts import build_group_assign_prompt, build_few_shot_block, build_regroup_prompt
 from .feedback import build_few_shot_examples
 from .content_classifier import classify_title
@@ -518,18 +521,42 @@ async def _process_event_increments(
             logger.error(f"Auto-summary-update failed for event {event_id}: {e}", exc_info=True)
 
 
-async def _agenerate_with_retry(llm: ChatOpenAI, messages: List[HumanMessage]) -> Any:
+async def _agenerate_with_retry(llm: ChatOpenAI, messages: List[HumanMessage], *, lane: str = "grouping") -> Any:
     last_err: Optional[BaseException] = None
     for attempt in range(1, 3):
+        started = time.monotonic()
+        response = None
+        error_type = None
         try:
-            return await llm.agenerate(messages)
+            response = await llm.agenerate(messages)
+            return response
         except Exception as e:
             last_err = e
+            error_type = type(e).__name__
             if attempt < 2:
                 logger.warning(
                     f"GROUPING: agenerate attempt {attempt}/2 failed: "
                     f"{type(e).__name__}: {e}; retrying once"
                 )
+        finally:
+            try:
+                llm_output = getattr(response, "llm_output", None)
+                usage = llm_output.get("token_usage", {}) if isinstance(llm_output, dict) else {}
+                token = lambda name: usage.get(name) if type(usage.get(name)) is int and usage[name] >= 0 else None
+                generation = response.generations[0][0].text if response is not None else None
+                telemetry.record_provider_call(
+                    uuid4().hex, lane,
+                    getattr(llm, "model_name", None) if isinstance(getattr(llm, "model_name", None), str) else app_config.DEFAULT_GROUPING_MODEL_NAME,
+                    (time.monotonic() - started) * 1000,
+                    sum(len(str(message.content).encode("utf-8")) for batch in messages for message in batch),
+                    len(generation.encode("utf-8")) if isinstance(generation, str) else None,
+                    prompt_tokens=token("prompt_tokens"),
+                    completion_tokens=token("completion_tokens"),
+                    total_tokens=token("total_tokens"),
+                    success=response is not None, error_type=error_type,
+                )
+            except Exception:
+                logger.debug("GROUPING: optional research telemetry could not be recorded", exc_info=True)
     assert last_err is not None
     raise last_err
 
@@ -563,7 +590,7 @@ async def _assign_chunk(
     content: Optional[str] = None
     for attempt, snippet_chars in enumerate((500, 200), start=1):
         try:
-            response = await _agenerate_with_retry(llm, [[HumanMessage(content=prompt)]])
+            response = await _agenerate_with_retry(llm, [[HumanMessage(content=prompt)]], lane="grouping")
             content = response.generations[0][0].text
             break
         except Exception as e:
@@ -601,6 +628,7 @@ async def regroup_uncategorized(
     on_event_increments: Optional[Callable[[Dict[int, List[int]]], Awaitable[int]]] = None,
     on_new_events: Optional[Callable[[List[int]], Awaitable[Optional[List[int]]]]] = None,
 ) -> Dict[str, int]:
+    regroup_run_id = uuid4().hex
     articles = fetch_ungrouped_articles(
         limit=100,
         window_hours=0,
@@ -624,6 +652,7 @@ async def regroup_uncategorized(
         "batches": 0, "batches_failed": 0,
     }
     all_new_event_ids: List[int] = []
+    observed_article_ids: Set[int] = set()
     event_increments: Dict[int, List[int]] = defaultdict(list)
     n_batches = (len(articles) + batch_size - 1) // batch_size
     logger.info(f"REGROUP: {len(articles)} articles in {n_batches} batch(es) of {batch_size}")
@@ -638,7 +667,7 @@ async def regroup_uncategorized(
         )
         try:
             response = await asyncio.wait_for(
-                _agenerate_with_retry(llm, [[HumanMessage(content=prompt)]]),
+                _agenerate_with_retry(llm, [[HumanMessage(content=prompt)]], lane="regroup"),
                 timeout=GROUPING_GUARD_TIMEOUT,
             )
             content = response.generations[0][0].text
@@ -663,6 +692,22 @@ async def regroup_uncategorized(
 
         assignments = parsed.get("assignments", [])
         chunk_counts, (new_event_ids, chunk_increments) = _apply_regroup_inner(assignments)
+        if not chunk_counts.get("errors"):
+            chunk_ids = {article["id"] for article in payload if type(article.get("id")) is int}
+            observed_article_ids.update(
+                assignment["article_id"] for assignment in assignments
+                if isinstance(assignment, dict)
+                and type(assignment.get("article_id")) is int
+                and assignment["article_id"] in chunk_ids
+                and (
+                    assignment.get("decision") in ("existing", "uncategorized")
+                    or (
+                        assignment.get("decision") == "new"
+                        and isinstance(assignment.get("event_name"), str)
+                        and bool(assignment["event_name"].strip())
+                    )
+                )
+            )
         for k, v in chunk_counts.items():
             if k in total_counts:
                 total_counts[k] += v
@@ -688,6 +733,7 @@ async def regroup_uncategorized(
     # Dedup can move articles and delete newly-created secondary events. Reconcile
     # the summary work against the final committed mapping before generating it.
     current_increments: Dict[int, List[int]] = {}
+    regroup_outcomes = []
     with db_session_scope() as db:
         requested_new_event_ids = set(all_new_event_ids)
         surviving_new_event_ids = {
@@ -711,6 +757,16 @@ async def regroup_uncategorized(
             ]
             if valid_ids:
                 current_increments[event_id] = valid_ids
+        if observed_article_ids:
+            regroup_outcomes = db.query(Article.id, Article.event_id).filter(
+                Article.id.in_(observed_article_ids)
+            ).all()
+
+    for article_id, final_event_id in regroup_outcomes:
+        try:
+            telemetry.record_regroup_outcome(None, regroup_run_id, article_id, final_event_id)
+        except Exception:
+            logger.debug("REGROUP: optional research telemetry could not be recorded", exc_info=True)
 
     event_increments = defaultdict(list, current_increments)
     new_event_ids_set = surviving_new_event_ids
