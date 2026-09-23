@@ -5,7 +5,7 @@ import logging
 import math
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -401,6 +401,27 @@ async def search_articles(
     ]
 
 
+def _summary_data_for_response(row: EventSummary) -> EventSummaryData:
+    """Present legacy summaries without treating model-generated counts as facts.
+
+    The column records membership at save time. Coverage and source-input
+    counts were not tracked before bounded summaries, so they remain unknown.
+    This changes only the response; historical JSON stays untouched.
+    """
+    payload = dict(row.summary_json or {})
+    payload["article_count"] = row.article_count
+    if (payload.get("source_input_kind") not in {"complete_articles", "segmented_article"}
+            or not isinstance(payload.get("summarized_article_count"), int)
+            or isinstance(payload.get("summarized_article_count"), bool)):
+        payload["summarized_article_count"] = None
+        payload["source_article_ids"] = None
+        payload["source_article_count"] = None
+        payload["source_input_kind"] = None
+    payload["article_ids"] = row.article_ids or []
+    payload["generated_at"] = row.generated_at
+    return EventSummaryData(**payload)
+
+
 @router.get("/{event_id}", response_model=EventDetailResponse)
 async def get_event(
     event_id: int,
@@ -448,11 +469,8 @@ async def get_event(
     )
     summary_data = None
     if latest_summary and latest_summary.summary_json:
-        sj = dict(latest_summary.summary_json)
-        sj["article_ids"] = latest_summary.article_ids or []
-        sj["generated_at"] = latest_summary.generated_at
         try:
-            summary_data = EventSummaryData(**sj)
+            summary_data = _summary_data_for_response(latest_summary)
         except Exception:
             summary_data = None
     return EventDetailResponse(
@@ -665,13 +683,14 @@ async def get_event_summary(
     )
     if not latest:
         return None
+    summary_data = _summary_data_for_response(latest)
     return EventSummaryResponse(
         id=latest.id, event_id=latest.event_id,
-        summary_json=EventSummaryData(**latest.summary_json),
+        summary_json=summary_data,
         article_ids=latest.article_ids or [],
         generated_at=latest.generated_at,
-        article_count=latest.summary_json.get("article_count", latest.article_count),
-        summarized_article_count=latest.article_count,
+        article_count=cast(int, latest.article_count),
+        summarized_article_count=summary_data.summarized_article_count,
         model_used=latest.model_used,
     )
 

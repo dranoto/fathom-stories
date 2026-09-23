@@ -180,16 +180,50 @@ class RollingServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_summary_api_outer_and_nested_counts_use_same_membership_meaning(self):
         self.seed(4, prior_count=2)
-        from app.routers.events import get_event_summary
+        from app.routers.events import get_event, get_event_summary
         with self.scope() as db:
             latest = db.query(EventSummary).one()
+            latest.article_count = 4
             latest.summary_json = {**latest.summary_json, "article_count": 4,
-                                   "summarized_article_count": 2}
+                                   "summarized_article_count": 2,
+                                   "source_article_ids": [1, 2],
+                                   "source_article_count": 2,
+                                   "source_input_kind": "complete_articles"}
         with self.scope() as db:
             response = await get_event_summary(1, db)
+            detail = await get_event(1, visitor_id="synthetic", db=db)
         self.assertEqual(response.article_count, 4)
         self.assertEqual(response.summarized_article_count, 2)
         self.assertEqual(response.summary_json.article_count, 4)
+        self.assertEqual(response.summary_json.summarized_article_count, 2)
+        for summary in (response.summary_json, detail.latest_summary):
+            self.assertEqual(summary.source_article_ids, [1, 2])
+            self.assertEqual(summary.source_article_count, 2)
+            self.assertEqual(summary.source_input_kind, "complete_articles")
+            self.assertEqual(summary.summarized_article_count, 2)
+
+    async def test_legacy_model_counts_are_not_reported_as_membership_or_coverage(self):
+        self.seed(4, prior_count=2)
+        from app.routers.events import get_event, get_event_summary
+        with self.scope() as db:
+            latest = db.query(EventSummary).one()
+            latest.summary_json = {**latest.summary_json,
+                                   "article_count": 656, "summarized_article_count": 9999,
+                                   "source_article_ids": [1, 2],
+                                   "source_article_count": 9999}
+        with self.scope() as db:
+            response = await get_event_summary(1, db)
+            detail = await get_event(1, visitor_id="synthetic", db=db)
+        self.assertEqual(response.article_count, 2)
+        self.assertEqual(response.summary_json.article_count, 2)
+        self.assertIsNone(response.summarized_article_count)
+        self.assertIsNone(response.summary_json.summarized_article_count)
+        self.assertEqual(detail.latest_summary.article_count, 2)
+        self.assertIsNone(detail.latest_summary.summarized_article_count)
+        for summary in (response.summary_json, detail.latest_summary):
+            self.assertIsNone(summary.source_article_ids)
+            self.assertIsNone(summary.source_article_count)
+            self.assertIsNone(summary.source_input_kind)
 
     async def test_parallel_updates_from_one_prior_cannot_overwrite_each_other(self):
         self.seed(4, prior_count=2)
