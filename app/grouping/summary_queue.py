@@ -400,6 +400,7 @@ class SummaryQueue:
         failed: List[int] = []
         for event_id in dict.fromkeys(event_ids):
             persisted_ids: Set[int] = set()
+            article_ids: List[int] = []
             try:
                 if self.durable:
                     article_ids = _event_article_ids(event_id)
@@ -409,7 +410,8 @@ class SummaryQueue:
                     persisted_ids.update(normalized.get(event_id, []))
                 succeeded = bool(
                     await asyncio.wait_for(
-                        generate_initial_summary(event_id, self.llm),
+                        (generate_summary_update(event_id, article_ids, self.llm)
+                         if self.durable else generate_initial_summary(event_id, self.llm)),
                         timeout=self.guard_timeout,
                     )
                 )

@@ -787,13 +787,15 @@ async def regroup_uncategorized(
                     exc_info=True,
                 )
         else:
-            from .summary_service import generate_initial_summary
+            from .summary_service import generate_summary_update
             initial_summary_llm = summary_llm or llm
             for new_event_id in initial_event_ids:
                 try:
                     succeeded = bool(
                         await asyncio.wait_for(
-                            generate_initial_summary(new_event_id, initial_summary_llm),
+                            generate_summary_update(
+                                new_event_id, event_increments.get(new_event_id, []), initial_summary_llm
+                            ),
                             timeout=SUMMARY_GUARD_TIMEOUT,
                         )
                     )

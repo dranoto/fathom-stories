@@ -17,6 +17,12 @@ The scraper, RSS pipeline, and bypass-paywalls Chrome extension are reused **ver
 - Hourly lifecycle: events with no new articles for 7+ days auto-archive
 - Per-browser ranking knobs (Sort → Shaped): log base, freshness half-life, importance floor, magnitude cap, new-event boost window + multiplier, read-all demotion — all persisted in `localStorage` and forwarded to the API as query params
 
+### Event-summary coverage
+
+A new event starts from its **earliest two articles**. Ordinary updates send a compact version of the prior summary and at most **two new articles**; large articles are processed in bounded segments and acknowledged only when all segments succeed. Manual regeneration uses the **newest 20 articles at most**, further reduced by the configured input budget. Article text is sent as untrusted user data, separate from the trusted summary instructions. Concurrent saves are rejected if another summary or event-membership change intervened; durable work is retried.
+
+The summary API distinguishes `article_count` (event membership when saved), `summarized_article_count` (IDs incorporated into this summary lineage), and `source_article_count` (articles in the latest request). After a bounded regeneration, older omitted articles are **not** counted as incorporated. Legacy summaries may not have all of these nested fields.
+
 ## Quick start (Docker, recommended)
 
 The app runs as a single `docker compose` service. The canonical production
@@ -59,6 +65,7 @@ All knobs live in `.env`. Restart the container (`docker compose restart app`) a
 | `DEFAULT_GROUPING_MODEL_NAME` | `FreeOnly` | Live grouping + recluster model |
 | `DEFAULT_CHAT_MODEL_NAME` | `FreeOnly` | Per-event chat model |
 | `SUMMARY_MAX_OUTPUT_TOKENS` | `16384` | Summary output budget, including hidden reasoning tokens |
+| `SUMMARY_MAX_PROMPT_TOKENS` | `100000` | Approximate summary input ceiling; article and byte caps also apply |
 | `SUMMARY_REASONING_EFFORT` | `medium` | Deliberation level for event summaries |
 | `GROUPING_REASONING_EFFORT` | `none` | Keeps grouping JSON reliable on reasoning-capable models |
 | `JEV_ENABLED` | `false` | Use Jev for one-article live classification; falls back to the grouping LLM if unavailable |

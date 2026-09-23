@@ -14,6 +14,10 @@ class EventSummaryData(BaseModel):
     progressive_summary: Optional[str] = None
     article_ids: Optional[List[int]] = None
     article_count: Optional[int] = None
+    summarized_article_count: Optional[int] = None  # successful cumulative inclusion, not membership
+    source_article_ids: Optional[List[int]] = None  # last model request, not all event members
+    source_article_count: Optional[int] = None
+    source_input_kind: Optional[str] = None  # complete_articles or segmented_article
     feed_count: Optional[int] = None
     date_range: Optional[str] = None
     generated_at: UtcDateTime = None
@@ -95,6 +99,7 @@ class EventSummaryResponse(BaseModel):
     article_ids: List[int] = []
     generated_at: UtcDateTime
     article_count: int
+    summarized_article_count: Optional[int] = None
     model_used: Optional[str] = None
 
 

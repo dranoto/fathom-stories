@@ -3,6 +3,7 @@ uvicorn[standard]
 python-dotenv
 langchain
 langchain-openai
+tiktoken
 langchain-mcp-adapters
 feedparser
 playwright

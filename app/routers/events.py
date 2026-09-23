@@ -443,7 +443,7 @@ async def get_event(
     latest_summary = (
         db.query(EventSummary)
         .filter(EventSummary.event_id == event_id)
-        .order_by(desc(EventSummary.generated_at))
+        .order_by(desc(EventSummary.id))
         .first()
     )
     summary_data = None
@@ -645,7 +645,7 @@ async def generate_event_summary(
     except HTTPException:
         raise
     from ..grouping.summary_service import generate_initial_summary
-    ok = await generate_initial_summary(event_id, llm)
+    ok = await generate_initial_summary(event_id, llm, resummarize=True)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to generate summary")
     return await get_event_summary(event_id, db)
@@ -660,7 +660,7 @@ async def get_event_summary(
     latest = (
         db.query(EventSummary)
         .filter(EventSummary.event_id == event_id)
-        .order_by(desc(EventSummary.generated_at))
+        .order_by(desc(EventSummary.id))
         .first()
     )
     if not latest:
@@ -669,7 +669,9 @@ async def get_event_summary(
         id=latest.id, event_id=latest.event_id,
         summary_json=EventSummaryData(**latest.summary_json),
         article_ids=latest.article_ids or [],
-        generated_at=latest.generated_at, article_count=latest.article_count,
+        generated_at=latest.generated_at,
+        article_count=latest.summary_json.get("article_count", latest.article_count),
+        summarized_article_count=latest.article_count,
         model_used=latest.model_used,
     )
 
@@ -1013,7 +1015,7 @@ async def chat_about_event(
     latest_summary = (
         db.query(EventSummary)
         .filter(EventSummary.event_id == event_id)
-        .order_by(desc(EventSummary.generated_at))
+        .order_by(desc(EventSummary.id))
         .first()
     )
     summary_payload = latest_summary.summary_json if latest_summary else None

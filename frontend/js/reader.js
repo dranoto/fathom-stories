@@ -436,7 +436,7 @@ async function openSummary(eventId, opts) {
 
   body.innerHTML = `
     <h1>${escapeHtml(event.name)} — Event Summary</h1>
-    <div class="reader-meta">v${summary.article_count || 0} articles · ${formatDate(summary.generated_at)}</div>
+    <div class="reader-meta">${summary.article_count ?? 0} event articles · ${summary.summarized_article_count == null ? "cumulative summary coverage not recorded" : `${summary.summarized_article_count} article(s) incorporated`} · ${summary.source_article_count == null ? "last summary input not recorded" : `${summary.source_input_kind === "segmented_article" ? "one article covered over multiple bounded requests" : `${summary.source_article_count} complete article(s) in the last summary request`}`} · ${formatDate(summary.generated_at)}</div>
     <div class="reader-content">
       ${summary.key_developments && summary.key_developments.length ? `
         <h2>Key developments</h2>
@@ -457,7 +457,7 @@ async function regenerateSummary() {
   if (!currentEventId) return;
   const articleCount = (window.__currentEventArticles || []).length;
   const msg = articleCount > 0
-    ? `Regenerate this event's summary from scratch? It has ${articleCount} article(s) — this will send a large amount of text to the LLM and may take a minute or more. Continue?`
+    ? `Regenerate this event's summary from scratch? It has ${articleCount} article(s). The model will analyze the newest 20 that fit the input budget; older articles will not be resent. Continue?`
     : `Regenerate this event's summary from scratch? The current summary will be replaced. Continue?`;
   if (!confirm(msg)) return;
   const toggle = document.getElementById("btn-toggle-read");

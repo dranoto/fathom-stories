@@ -337,7 +337,7 @@ class SummaryQueueTests(unittest.IsolatedAsyncioTestCase):
             )
 
         with patch("app.grouping.summary_queue.db_session_scope", new=test_scope), patch(
-            "app.grouping.summary_queue.generate_initial_summary",
+            "app.grouping.summary_queue.generate_summary_update",
             new=AsyncMock(return_value=False),
         ):
             queue = SummaryQueue(

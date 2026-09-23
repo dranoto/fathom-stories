@@ -321,7 +321,7 @@ def cmd_summarize(args):
     )
 
     async def runner():
-        return await generate_initial_summary(args.event_id, llm)
+        return await generate_initial_summary(args.event_id, llm, resummarize=True)
 
     ok = asyncio.run(runner())
     if not ok:

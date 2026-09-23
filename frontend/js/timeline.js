@@ -77,7 +77,9 @@ export async function renderActiveEventPane(eventId) {
 
 function renderSummaryBubble(summary, stale, eventId) {
   const version = summary ? (summary.article_count || 0) : 0;
-  const dotTitle = summary ? `v${version}` : "pending generation";
+  const dotTitle = summary
+    ? `${version} event articles · ${summary.summarized_article_count == null ? "cumulative summary coverage not recorded" : `${summary.summarized_article_count} incorporated`} · ${summary.source_article_count == null ? "last summary input not recorded" : `${summary.source_article_count} article(s) in last summary request`}`
+    : "pending generation";
   const regenerating = isEventRegenerating(eventId);
   const regenChip = regenerating
     ? `<span class="summary-regen-chip" title="Summary is regenerating in the background"><span class="summary-regen-dot"></span>regenerating</span>`

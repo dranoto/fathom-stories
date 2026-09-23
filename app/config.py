@@ -381,7 +381,7 @@ Summary:""")
 
 DEFAULT_MAJOR_SUMMARY_PROMPT = os.getenv("DEFAULT_MAJOR_SUMMARY_PROMPT", """You are summarizing a collection of articles about {event_name} for a reader who skims many events quickly. Lead with the most recent and most significant developments, and treat older developments as supporting context.
 
-Each article carries a publish date and an importance score (0\u20131). Treat both as ranking signals: prefer more recent and higher-importance developments when deciding what leads the key_developments list and what is surfaced at the recent end of the timeline, so a long-running event stays current rather than weighting weeks of coverage evenly. Use these signals to choose emphasis only; keep every article in scope and report on the full set.
+Each article carries a publish date and an importance score (0\u20131). Treat both as ranking signals: prefer more recent and higher-importance developments when deciding what leads the key_developments list and what is surfaced at the recent end of the timeline. Use these signals to choose emphasis only; report only facts supported by the selected articles in this request. Keep timeline_narrative to at most 12 phases and cross_source_synthesis.by_source to at most 12 entries.
 
 Return your answer as valid JSON using EXACTLY the structure below. Keep all output as plain JSON, and escape any internal quotes and newlines so the JSON stays valid.
 
@@ -392,10 +392,7 @@ Return your answer as valid JSON using EXACTLY the structure below. Keep all out
   "by_source": [{{"source": "<outlet>", "observation": "How this outlet covers the story differently \u2014 its unique angle, emphasis, or framing. Keep it to roughly 30 words."}}],
   "synthesis": "One closing paragraph reconciling the sources: note conflicts, consensus, or patterns in coverage. Keep it to roughly 80 words. When only one source exists, summarize its stance on its own terms."
  }},
- "progressive_summary": "What the reader most needs to know right now \u2014 the latest material developments, written as full prose. Keep it to roughly 120 words.",
- "article_count": <total number of articles analyzed>,
- "feed_count": <number of unique feeds>,
- "date_range": "<earliest date> - <latest date>"
+ "progressive_summary": "What the reader most needs to know right now — the latest material developments, written as full prose. Keep it to roughly 120 words."
 }}
 
 Format each field to its job: parallel items as a list, connective reasoning as prose. Treat only genuine article content as input; skip scraped UI artifacts and boilerplate such as 'toggle caption' or navigation labels.
@@ -413,8 +410,8 @@ Each new article carries a publish date and an importance score (0\u20131). Trea
 
 Tasks:
  1. key_developments: merge in the new milestones, compare all candidates against each other on significance, keep the most significant up to a total of 5, and lead with the strongest.
- 2. timeline_narrative: append new dated phase(s) in chronological order, and keep existing entries as they are unless the new articles update them.
- 3. cross_source_synthesis: add a by_source entry when a new outlet or a new angle/conflict appears, and refresh the synthesis whenever the overall picture changes.
+ 2. timeline_narrative: produce at most 12 dated phases total. Retain only the most consequential older milestones and the latest phases, chronological oldest to newest. Replace or consolidate prior entries rather than appending forever.
+ 3. cross_source_synthesis: include at most 12 distinct, consequential source angles; consolidate old angles when needed and refresh the synthesis whenever the overall picture changes.
  4. progressive_summary: rewrite it to focus on what is new since the prior summary.
 
 Return your answer as valid JSON using EXACTLY the structure below. Keep all output as plain JSON, and escape internal quotes and newlines.
@@ -426,10 +423,7 @@ Return your answer as valid JSON using EXACTLY the structure below. Keep all out
   "by_source": [{{"source": "<outlet>", "observation": "How this outlet covers the story differently, roughly 30 words."}}],
   "synthesis": "Closing paragraph reconciling the sources, roughly 80 words."
  }},
- "progressive_summary": "What is new since the prior summary, written as full prose, roughly 120 words.",
- "article_count": <new total number of articles>,
- "feed_count": <number of unique feeds>,
- "date_range": "<earliest date> - <latest date>"
+ "progressive_summary": "What is new since the prior summary, written as full prose, roughly 120 words."
 }}
 
 Format each field to its job: parallel items as a list, connective reasoning as prose. Treat only genuine article content as input; skip scraped UI artifacts and boilerplate.

@@ -12,6 +12,18 @@ from app.database.models import Article, Base, Event, EventSummary
 from app.grouping import summary_service
 
 
+def _summary(label: str) -> dict:
+    return {
+        "key_developments": [label],
+        "timeline_narrative": [{"date": "2026-09-22", "text": label}],
+        "cross_source_synthesis": {
+            "by_source": [{"source": "Synthetic outlet", "observation": label}],
+            "synthesis": label,
+        },
+        "progressive_summary": label,
+    }
+
+
 class SummaryServiceConsistencyTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:")
@@ -44,7 +56,7 @@ class SummaryServiceConsistencyTests(unittest.IsolatedAsyncioTestCase):
                 Article(id=2, url="https://example.com/2", title="Two", event_id=1),
                 EventSummary(
                     event_id=1,
-                    summary_json={"headline": "Prior", "article_ids": [1, 2]},
+                    summary_json={**_summary("Prior"), "article_ids": [1, 2]},
                     article_ids=[1, 2],
                     article_count=2,
                 ),
@@ -68,7 +80,7 @@ class SummaryServiceConsistencyTests(unittest.IsolatedAsyncioTestCase):
             result = await summary_service.generate_summary_update(1, [1], object())
 
         self.assertTrue(result)
-        regenerate.assert_awaited_once_with(1, ANY)
+        regenerate.assert_awaited_once_with(1, ANY, resummarize=True)
         incremental.assert_not_awaited()
 
     async def test_moved_article_is_not_sent_to_old_event_incremental_prompt(self):
@@ -97,7 +109,7 @@ class SummaryServiceConsistencyTests(unittest.IsolatedAsyncioTestCase):
         with self.scope() as db:
             latest = db.query(EventSummary).filter(EventSummary.event_id == 1).one()
             latest.article_ids = [1]
-            latest.summary_json = {"headline": "Prior", "article_ids": [1]}
+            latest.summary_json = {**_summary("Prior"), "article_ids": [1]}
             latest.article_count = 1
 
         async def move_during_generation(**_kwargs):
@@ -116,7 +128,7 @@ class SummaryServiceConsistencyTests(unittest.IsolatedAsyncioTestCase):
         with self.scope() as db:
             self.assertEqual(db.query(EventSummary).filter(EventSummary.event_id == 1).count(), 1)
 
-    async def test_truncated_initial_summary_validates_full_event_membership(self):
+    async def test_too_small_initial_budget_keeps_summary_unsaved(self):
         with self.scope() as db:
             db.add(Event(id=3, name="Large event", status="active"))
             db.add_all([
@@ -147,10 +159,9 @@ class SummaryServiceConsistencyTests(unittest.IsolatedAsyncioTestCase):
                 max_prompt_tokens=30,
             )
 
-        self.assertTrue(result)
+        self.assertFalse(result)
         with self.scope() as db:
-            saved = db.query(EventSummary).filter(EventSummary.event_id == 3).one()
-            self.assertEqual(len(saved.article_ids), 1)
+            self.assertEqual(db.query(EventSummary).filter(EventSummary.event_id == 3).count(), 0)
 
     def test_sqlite_summary_save_holds_writer_lock_through_membership_validation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
