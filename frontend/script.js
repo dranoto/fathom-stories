@@ -6,7 +6,7 @@ import {
   setEvents, getEvents, setReadIds, setActiveEventId,
   getActiveEventId, setInboxOpen, getInboxOpen, setInboxCounts,
 } from "./js/state.js";
-import { renderEventTabs, buildNavOrder } from "./js/eventTabs.js?v=38";
+import { renderEventTabs, buildNavOrder } from "./js/eventTabs.js?v=39";
 import { renderActiveEventPane, renderInboxPane } from "./js/timeline.js";
 import { setupReader, closeReader } from "./js/reader.js";
 import { setupSearch } from "./js/search.js";

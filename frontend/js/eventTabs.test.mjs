@@ -17,10 +17,15 @@ globalThis.window = {
   setTimeout,
   matchMedia() { return { matches: true }; },
 };
+globalThis.CustomEvent = class CustomEvent {
+  constructor(type, options) { this.type = type; this.detail = options?.detail; }
+};
+const documentListeners = new Map();
 globalThis.document = {
   documentElement: { clientWidth: 1200 },
   getElementById() { return null; },
   querySelector() { return null; },
+  addEventListener(type, listener, options) { documentListeners.set(type, { listener, options }); },
   createElement() { return { className: "", setAttribute() {}, style: {}, addEventListener() {}, appendChild() {} }; },
   body: { appendChild() {}, contains() { return false; } },
 };
@@ -35,7 +40,7 @@ const {
   _minorToggleMarkup,
   _cardMarkup,
 } = await import("./eventTabs.js");
-const { setEvents } = await import("./state.js");
+const { setEvents, setMinorDrawerOpen, getMinorDrawerOpen } = await import("./state.js");
 
 const NOW = new Date("2026-09-06T12:00:00Z").getTime();
 const oneHourAgo = new Date(NOW - 1 * 3600 * 1000).toISOString();
@@ -206,6 +211,23 @@ test("renderEventTabs draws one row and a drawer even when every event is fresh"
     setEvents([]);
     document.getElementById = previousGet;
     document.createElement = previousCreate;
+  }
+});
+
+test("document capture clicks dismiss the drawer only outside it and its toggle", () => {
+  const click = documentListeners.get("click");
+  assert.ok(click, "a document click handler must be installed");
+  assert.equal(click.options, true, "capture clicks even if another control stops propagation");
+  setMinorDrawerOpen(true);
+  try {
+    click.listener({ composedPath: () => [{ id: "drawer-card" }, { id: "minor-drawer" }] });
+    assert.equal(getMinorDrawerOpen(), true, "inside clicks keep the drawer open");
+    click.listener({ composedPath: () => [{ dataset: { minorToggle: "1" } }] });
+    assert.equal(getMinorDrawerOpen(), true, "toggle clicks are handled by the toggle itself");
+    click.listener({ composedPath: () => [{ id: "reader" }] });
+    assert.equal(getMinorDrawerOpen(), false, "outside clicks close the drawer");
+  } finally {
+    setMinorDrawerOpen(false);
   }
 });
 

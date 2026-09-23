@@ -290,6 +290,13 @@ window.addEventListener("minor-drawer-toggled", () => {
   }
 });
 
+document.addEventListener("click", (event) => {
+  if (!getMinorDrawerOpen()) return;
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+  if (path.some((node) => node?.id === "minor-drawer" || node?.dataset?.minorToggle === "1")) return;
+  setMinorDrawerOpen(false);
+}, true);
+
 export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
   _lastCallbacks = { onSelectEvent, onSelectInbox, onToggleMinor };
   const container = document.getElementById("event-tabs");

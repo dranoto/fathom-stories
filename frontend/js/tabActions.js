@@ -1,7 +1,7 @@
 // frontend/js/tabActions.js
 import { markEventVisited } from "./apiService.js";
 import { setInboxOpen, getInboxOpen, setActiveEventId, getActiveEventId, getEvents, getUngroupedArticles, setMinorDrawerOpen, getMinorDrawerOpen, markEventSeen } from "./state.js";
-import { renderEventTabs } from "./eventTabs.js?v=38";
+import { renderEventTabs } from "./eventTabs.js?v=39";
 import { renderActiveEventPane, renderInboxPane } from "./timeline.js";
 import { isDesktopLayout } from "./layout.js";
 
