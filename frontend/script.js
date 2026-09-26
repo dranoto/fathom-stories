@@ -19,6 +19,7 @@ import { setupSwipeNav } from "./js/swipeNav.js";
 import { selectEventTab, selectInboxTab, toggleMinorDrawer } from "./js/tabActions.js";
 import { isDesktopLayout } from "./js/layout.js";
 import { setupReaderHistory } from "./js/readerHistory.js";
+import { checkForNewVersion } from "./js/versionCheck.js";
 
 function onReaderHistoryPop(top) {
   if (!top) {
@@ -64,9 +65,10 @@ async function refreshEvents() {
   if (getInboxOpen()) {
     await selectInboxTab({ skipOpen: true });
   } else if (activeId && all.some(e => e.id === activeId)) {
-    await selectEventTab(activeId, { skipOpen: true });
+    await selectEventTab(activeId, { skipOpen: true, recordVisit: false });
   } else if (all.length > 0) {
-    await selectEventTab(all[0].id, { skipOpen: true });
+    const firstInBar = buildNavOrder(all).find(t => t.kind === "event");
+    await selectEventTab(firstInBar ? firstInBar.id : all[0].id, { skipOpen: true, recordVisit: false });
   } else {
     await selectInboxTab({ skipOpen: true });
   }
@@ -93,7 +95,7 @@ async function refreshStats() {
     const coolingPart = s.events_cooling > 0 ? ` · ${s.events_cooling} cooling` : "";
     setStatus(
       "ok",
-      `${s.articles_total} articles · ${s.articles_ungrouped} in inbox · ${s.events_active} active${coolingPart}`
+      `${Number(s.articles_total).toLocaleString()} articles · ${Number(s.articles_ungrouped).toLocaleString()} in inbox · ${s.events_active} active${coolingPart}`
     );
   } catch (e) {
     setStatus("error", e.message);
@@ -130,6 +132,7 @@ async function afterTimerFiredRefresh() {
   await refreshEvents();
   await refreshInboxCounts();
   await refreshStats();
+  checkForNewVersion();
 }
 
 async function afterTimerFiredRegroup() {
@@ -137,6 +140,7 @@ async function afterTimerFiredRegroup() {
   await refreshInboxCounts();
   await refreshReadIds();
   await refreshStats();
+  checkForNewVersion();
 }
 
 async function handleSwipeNav(direction) {
@@ -241,6 +245,7 @@ async function bootstrap() {
     window.dispatchEvent(new CustomEvent("open-summary", { detail: { eventId: currentActiveId } }));
   }
   await refreshStats();
+  checkForNewVersion();
 }
 
 bootstrap();

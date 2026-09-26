@@ -1,5 +1,5 @@
 // fathom-stories service worker
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const SHELL_CACHE = `fathom-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `fathom-runtime-${CACHE_VERSION}`;
 
@@ -33,6 +33,7 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.searchParams.has('version-check')) return;
 
   if (url.pathname === '/' || url.pathname.startsWith('/static/')) {
     event.respondWith(cacheFirst(req, SHELL_CACHE));

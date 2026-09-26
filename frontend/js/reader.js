@@ -381,6 +381,7 @@ async function openSummary(eventId, opts) {
   }
   body.classList.remove("chat-mode");
   body.innerHTML = `<div class="pane-empty">Loading summary…</div>`;
+  source.textContent = "Loading…";
   pane.hidden = false;
   main.classList.add("has-reader");
   const removeBtn = document.getElementById("btn-remove-from-event");
@@ -434,15 +435,29 @@ async function openSummary(eventId, opts) {
     return;
   }
 
+  const coverageDetail = [
+    summary.summarized_article_count == null
+      ? "Cumulative summary coverage not recorded"
+      : `${summary.summarized_article_count} articles incorporated`,
+    summary.source_article_count == null
+      ? "Last summary input not recorded"
+      : summary.source_input_kind === "segmented_article"
+        ? "One article covered over multiple bounded requests"
+        : `${summary.source_article_count} complete articles in the last summary request`,
+    `Generated ${formatDate(summary.generated_at) || "time unknown"}`,
+  ];
   body.innerHTML = `
     <h1>${escapeHtml(event.name)} — Event Summary</h1>
-    <div class="reader-meta">${summary.article_count ?? 0} event articles · ${summary.summarized_article_count == null ? "cumulative summary coverage not recorded" : `${summary.summarized_article_count} article(s) incorporated`} · ${summary.source_article_count == null ? "last summary input not recorded" : `${summary.source_input_kind === "segmented_article" ? "one article covered over multiple bounded requests" : `${summary.source_article_count} complete article(s) in the last summary request`}`} · ${formatDate(summary.generated_at)}</div>
+    <details class="reader-meta">
+      <summary>${Number(summary.article_count ?? 0).toLocaleString()} articles · updated ${formatAgo(summary.generated_at)}</summary>
+      <div>${coverageDetail.map(escapeHtml).join(" · ")}</div>
+    </details>
     <div class="reader-content">
       ${summary.key_developments && summary.key_developments.length ? `
         <h2>Key developments</h2>
         <ul>${summary.key_developments.map(k => `<li>${escapeHtml(k)}</li>`).join("")}</ul>
       ` : ""}
-      <h2>Progressive update</h2>
+      <h2>Latest update</h2>
       <p>${escapeHtml(summary.progressive_summary || "(none)")}</p>
       ${renderTimelineNarrative(summary.timeline_narrative)}
       ${renderCrossSourceSynthesis(summary.cross_source_synthesis)}
@@ -770,6 +785,18 @@ function formatDate(d) {
   if (!d) return "";
   if (typeof d === "string") d = new Date(d);
   return d.toLocaleString();
+}
+
+function formatAgo(d) {
+  if (!d) return "time unknown";
+  const timestamp = new Date(d).getTime();
+  if (!Number.isFinite(timestamp)) return "time unknown";
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function renderTimelineNarrative(value) {

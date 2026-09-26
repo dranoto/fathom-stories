@@ -237,6 +237,12 @@ body {
   font-size: 13px;
   margin-bottom: 14px;
 }
+.reader-body .reader-meta summary {
+  cursor: pointer;
+}
+.reader-body .reader-meta > div {
+  margin-top: 6px;
+}
 .reader-body .reader-content {
   font-size: calc(14px * var(--font-scale));
   line-height: 1.65;

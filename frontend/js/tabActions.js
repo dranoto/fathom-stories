@@ -19,11 +19,13 @@ export function toggleMinorDrawer() {
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
 }
 
-export async function selectEventTab(eventId, { skipOpen = false } = {}) {
+export async function selectEventTab(eventId, { skipOpen = false, recordVisit = true } = {}) {
   setInboxOpen(false);
   setActiveEventId(eventId);
-  markEventVisited(eventId).catch(() => {});
-  markEventSeen(eventId);
+  if (recordVisit) {
+    markEventVisited(eventId).catch(() => {});
+    markEventSeen(eventId);
+  }
   renderEventTabs(selectEventTab, selectInboxTab, toggleMinorDrawer);
   scrollActiveTabIntoView();
   await renderActiveEventPane(eventId);

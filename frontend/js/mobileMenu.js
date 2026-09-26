@@ -34,7 +34,7 @@ function isMobileWidth() {
 
 function buildMenuBody() {
   const inbox = getInboxCounts();
-  const totalArticles = cachedStats ? cachedStats.articles_total : "—";
+  const totalArticles = cachedStats ? Number(cachedStats.articles_total).toLocaleString() : "—";
   const active = cachedStats ? cachedStats.events_active : "—";
   const cooling = cachedStats && cachedStats.events_cooling > 0 ? ` · ${cachedStats.events_cooling} cooling` : "";
   const statsLine = `${totalArticles} articles · ${inbox.unread} in inbox · ${active} active${cooling}`;

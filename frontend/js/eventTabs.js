@@ -133,7 +133,7 @@ function _cardMarkup(e, activeId, inboxOpen, group) {
     ? `<span class="unread-dot" title="${unread} unread"></span>`
     : "";
   const newBadge = newCount > 0
-    ? `<span class="new-badge" title="${newCount} new since last visit">+${newCount > 99 ? "99+" : newCount}</span>`
+    ? `<span class="new-badge" title="${newCount} new since last visit">${newCount > 99 ? "99+" : "+" + newCount}</span>`
     : "";
   const newTag = isNew
     ? `<span class="new-tag" title="New event — click to clear">New</span>`
@@ -142,7 +142,10 @@ function _cardMarkup(e, activeId, inboxOpen, group) {
     ? `<span class="status-icon">❄</span>`
     : "";
   const groupAttr = group ? ` data-group="${group}"` : "";
-  return `<div class="${cls}" data-event-id="${e.id}"${groupAttr} title="${escapeHtml(e.name)}">
+  const accessibleLabel = [e.name];
+  if (newCount > 0) accessibleLabel.push(`${newCount} new since last visit`);
+  if (unread > 0) accessibleLabel.push(`${unread} unread`);
+  return `<div class="${cls}" data-event-id="${e.id}"${groupAttr} role="button" tabindex="0" aria-label="${escapeHtml(accessibleLabel.join(", "))}" aria-pressed="${e.id === activeId && !inboxOpen ? "true" : "false"}" title="${escapeHtml(e.name)}">
     ${newTag}
     ${unreadDot}${newBadge}
     <div class="name two-line">${statusIcon}${escapeHtml(e.name)}</div>
@@ -159,7 +162,7 @@ function _inboxMarkup(activeId, inboxOpen, inboxN, inboxU) {
   const unreadDot = inboxU > 0
     ? `<span class="unread-dot" title="${inboxU} unread"></span>`
     : "";
-  return `<div class="event-tab ${cls}" data-inbox="1" title="Ungrouped articles">
+  return `<div class="event-tab ${cls}" data-inbox="1" role="button" tabindex="0" aria-label="${escapeHtml(inboxU > 0 ? `Inbox, ${inboxU} unread` : "Inbox")}" aria-pressed="${inboxOpen ? "true" : "false"}" title="Ungrouped articles">
     ${unreadDot}
     <div class="name two-line">Inbox</div>
     <div class="meta">${meta}</div>
@@ -243,6 +246,7 @@ function _renderDrawer(events, drawerOpen) {
   const el = _ensureDrawerEl();
   el.setAttribute("data-open", drawerOpen ? "1" : "0");
   el.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
+  el.inert = !drawerOpen;
   const cardsHtml = events
     .map((e) => _cardMarkup(e, getActiveEventId(), false, "drawer-item"))
     .join("");
@@ -359,6 +363,16 @@ export function renderEventTabs(onSelectEvent, onSelectInbox, onToggleMinor) {
 
   _renderDrawer(drawerEvents, drawerOpen);
 }
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const tab = event.target && typeof event.target.closest === "function"
+    ? event.target.closest(".event-tab[data-event-id], .event-tab[data-inbox]")
+    : null;
+  if (!tab) return;
+  event.preventDefault();
+  tab.click();
+});
 
 export { INBOX_ID, _minorToggleMarkup, _cardMarkup };
 export function escapeHtml(s) {
